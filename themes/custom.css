@@ -1,4 +1,4 @@
-/* @theme academic */
+/* @theme custom */
 
 @import 'gaia';
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
@@ -7,15 +7,18 @@
 :root {
   --color-background: #fff;
   --color-foreground: #333;
-  --color-highlight: #800000;
+  --color-highlight: #9558B2;
 }
 
 section {
   background-image: none;
-  font-family: 'Noto Sans JP', sans-serif;
   padding-top: 90px;
   padding-left: 40px;
   padding-right: 40px;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Roboto Slab', serif;
 }
 
 /* https://github.com/marp-team/marpit/issues/271 */
@@ -29,49 +32,56 @@ ul ul {
 }
 
 section.lead h1 {
-  color: #800000;
-  text-align: left;
+  text-align: center;
 }
 section.lead h1 strong {
-  -webkit-text-stroke: 1px #800000;
+  -webkit-text-stroke: 1px #9558B2;
 }
 section.lead h2 {
-  color: #800000;
-  text-align: left;
+  color: #9558B2;
+  text-align: center;
 }
 section.lead h2 strong {
-  -webkit-text-stroke: 1px #800000;
+  -webkit-text-stroke: 1px #9558B2;
 }
 section.lead h3 {
-  color: #800000;
-  text-align: left;
+  text-align: center;
 }
 section.lead h3 strong {
-  -webkit-text-stroke: 1px #800000;
+  -webkit-text-stroke: 1px #9558B2;
 }
 section.lead h4 {
-  color: #800000;
-  text-align: left;
+  text-align: center;
 }
 section.lead h4 strong {
-  -webkit-text-stroke: 1px #800000;
+  -webkit-text-stroke: 1px #9558B2;
 }
 section.lead h5 {
-  color: #800000;
-  text-align: left;
+  text-align: center;
 }
 section.lead h5 strong {
-  -webkit-text-stroke: 1px #800000;
+  -webkit-text-stroke: 1px #9558B2;
 }
 section.lead p {
-  text-align: right;
+  font-family: 'Roboto Slab', serif;
+  text-align: center;
+}
+section.lead header {
+  color: #9558B2;
 }
 
 header {
-  background-color: #800000;
+  font-family: 'Roboto Slab', serif;
+  background-color: #9558B2;
   color: #fff;
   font-size: 1em;
   font-weight: 700;
+  text-align: right;
+}
+
+footer {
+  font-family: 'Roboto Slab', serif;
+  text-align: right;
 }
 
 blockquote {
@@ -94,5 +104,5 @@ img[alt~="center"] {
 }
 
 code {
-  font-family: 'Source Code Pro', monospace;
+  font-family: 'Monaco', monospace;
 }
