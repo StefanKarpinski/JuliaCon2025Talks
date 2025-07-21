@@ -46,7 +46,7 @@ One thing we did right long ago was to adamantly insist that default RNG output 
 Note: we used dSFMT, a variant of classic Mersenne Twister
 
 ---
-# Why Change RNGs?
+# Why did we change RNGs?
 
 Mersenne Twister is not a great RNG by modern standards
 
@@ -67,9 +67,9 @@ Xoshiro256++ is one of the best general purpose, modern RNGs
   - low bits are slightly weak but better than MT
 
 ---
-# An even more significant change...
+# Even more significantly...
 
-Enabled by Xoshiro256++'s compact size
+Xoshiro256's compact size enables task-local RNG state
 
 - Before: shared global RNG state
   - requires locks — boo, slooow
@@ -190,7 +190,7 @@ In 1.7-1.9 the child is seeded by sampling from the parent RNG
   - uses RNG four times—once per word of Xoshiro256 state
 
 ---
-# Same output (1.7-1.9)
+# These behave the same (1.7-1.9)
 
 ```julia
 Random.seed!(0)
@@ -205,3 +205,116 @@ println(repr(rand(UInt64)))
 [rand(UInt64) for _ = 1:4]  # call RNG 4 times
 println(repr(rand(UInt64)))
 ```
+
+---
+# To The Literature!
+
+DotMix (2012): *Deterministic Parallel Random-Number Generation for Dynamic-Multithreading Platforms*
+- by Charles Leiserson, Tao Schardl, Jim Sukha
+- for MIT Cilk parallel runtime
+
+SplitMix (2014): *Fast Splittable Pseudorandom Number Generators*
+- by Guy Steele Jr, Doug Lea, Christine Flood
+- for Oracle's Java JDK8
+
+---
+# DotMix
+
+Concept: "pedigree" vector of a task
+- Root task has pedigree $\langle \rangle$
+- If parent has pedigree $\langle k_1, k_2, ..., k_{n-1} \rangle$
+- Then $k_n$th child has pedigree $\langle k_1, k_2, ..., k_{n-1}, k_n \rangle$
+
+Every prefix of a task's pedigree is the pedigree of an ancestor
+
+---
+# DotMix
+
+Core idea:
+- Compute a dot product of a task's pedigree with random weights
+- Can prove dot product collisions have probability near $1/2^{64}$
+- Apply bijective, non-linear "finalizer" based on MurmurHash
+- Finalized value is used to seed a main RNG (per-task)
+
+---
+# DotMix: details
+
+The dot product of a pedigree vector looks like this:
+$$
+\chi\langle k_1, \dots, k_n \rangle = \sum_{i=1}^n w_i k_i \pmod p
+$$
+- $p$ is a prime modulus
+  - necessary for proof of collision resistance
+- They use $p = 2^{64} - 59$
+  - complicates the implementation a fair bit
+
+---
+# DotMix: proof
+
+Suppose two different tasks have the same $\chi$ value:
+$$
+\sum_{i=1}^n w_i k_i = \sum_{i=1}^n w_i k_i'  \pmod p
+$$
+Let $j$ be some coordinate where $k_j ≠ k_j'$
+$$\begin{align}
+w_j (k_j - k_j') &= \delta &&\pmod p \\
+w_j &= \delta (k_j - k_j')^{-1} &&\pmod p
+\end{align}$$
+
+---
+# SplitMix
+
+### So funny story...
+
+Authors spend _a lot of time_ streamlining an implementation of DotMix
+
+- I thought that this optimized version was SplitMix—it's not
+- The paper just throws up its hands and does something else
+
+---
+# SplitMix
+
+What SplitMix actually is:
+```julia
+adv(s::UInt64) = s += 0x9E3779B97F4A7C15
+
+function out(s::UInt64)
+    s ⊻= s >> 30
+    s *= 0xBF58476D1CE4E5B9
+    s ⊻= s >> 27
+    s *= 0x94D049BB133111EB
+    s ⊻= s >> 31
+end
+```
+
+---
+# SplitMix
+
+To generate values in a task:
+```julia
+state = adv(state)
+value = out(state)
+```
+To spawn a child task:
+```julia
+parent_state = adv(state)
+child_state  = out(state)
+```
+
+---
+# SplitMix
+
+This is amusing because:
+
+- It's literally what we're doing in Julia 1.7-1.9
+- Except we're using a different (better) RNG
+
+If we use this as our main RNG it fixes nothing
+
+- The whole point is for forking tasks _not_ to advance main RNG
+- We _could_, however, use SplitMix as an auxiliary RNG (like DotMix)
+
+---
+# Too Late
+
+By the time I realized all this, I'd already done something else...

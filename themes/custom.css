@@ -1,8 +1,6 @@
 /* @theme custom */
 
 @import 'gaia';
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Source+Code+Pro&display=swap');
 
 :root {
   --color-background: #fff;
@@ -49,22 +47,22 @@ section.lead h2 {
 section.lead h2 strong {
   -webkit-text-stroke: 1px #9558B2;
 }
-section.lead h3 {
+section h3 {
   text-align: center;
 }
-section.lead h3 strong {
+section h3 strong {
   -webkit-text-stroke: 1px #9558B2;
 }
-section.lead h4 {
+section h4 {
   text-align: center;
 }
-section.lead h4 strong {
+section h4 strong {
   -webkit-text-stroke: 1px #9558B2;
 }
-section.lead h5 {
+section h5 {
   text-align: center;
 }
-section.lead h5 strong {
+section h5 strong {
   -webkit-text-stroke: 1px #9558B2;
 }
 section.lead p {
