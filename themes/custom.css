@@ -21,6 +21,11 @@ h1, h2, h3, h4, h5, h6 {
   font-family: 'Roboto Slab', serif;
 }
 
+table {
+  margin-left: auto;
+  margin-right: auto;
+}
+
 /* https://github.com/marp-team/marpit/issues/271 */
 section::after {
   font-weight: 700;
@@ -101,6 +106,14 @@ blockquote::after {
 img[alt~="center"] {
   display: block;
   margin: 0 auto;
+}
+
+pre {
+  max-width: 80%;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 0.5em 1em;
+  border-radius: 6px;
 }
 
 code {
