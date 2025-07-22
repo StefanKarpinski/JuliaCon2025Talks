@@ -139,7 +139,7 @@ Many thanks to [Chet Hega](https://github.com/chethega) for the PR that original
 ---
 # One Minor Annoyance
 
-Julia 1.7-1.9:
+In Julia 1.7-1.9:
 
 ```julia
 julia> begin
@@ -154,13 +154,13 @@ julia> begin
 ---
 # One Minor Annoyance
 
-Julia 1.7-1.9:
+In Julia 1.7-1.9:
 
 ```julia
 julia> begin
            Random.seed!(0)
            println(repr(rand(UInt64)))
-           @async nothing
+           @async nothing # <= this can't matter, right?
            println(repr(rand(UInt64)))
        end
 0x67dbeba77c5b608f
@@ -170,7 +170,7 @@ julia> begin
 ---
 # The Problem
 
-In Julia 1.7-1.9
+In Julia 1.7-1.9:
 
 - Merely spawning a child task changes the parent RNG
 - Doesn't matter if the child uses the RNG or not
@@ -222,10 +222,11 @@ SplitMix (2014): *Fast Splittable Pseudorandom Number Generators*
 
 Concept: "pedigree" vector of a task
 - Root task has pedigree $\langle \rangle$
-- If parent has pedigree $\langle k_1, k_2, ..., k_{n-1} \rangle$
-- Then $k_n$th child has pedigree $\langle k_1, k_2, ..., k_{n-1}, k_n \rangle$
+- If parent has pedigree $\langle k_1, k_2, ..., k_{d-1} \rangle$
+- Then $k_d$th child has pedigree $\langle k_1, k_2, ..., k_{d-1}, k_d \rangle$
 
 Every prefix of a task's pedigree is the pedigree of an ancestor
+- $d$ is task's depth in task tree
 
 ---
 # DotMix
@@ -241,7 +242,7 @@ Core idea:
 
 The dot product of a pedigree vector looks like this:
 $$
-\chi\langle k_1, \dots, k_n \rangle = \sum_{i=1}^n w_i k_i \pmod p
+\chi\langle k_1, \dots, k_d \rangle = \sum_{i=1}^d w_i k_i \pmod p
 $$
 - $p$ is a prime modulus
   - necessary for proof of collision resistance
@@ -253,7 +254,7 @@ $$
 
 Suppose two different tasks have the same $\chi$ value:
 $$
-\sum_{i=1}^n w_i k_i = \sum_{i=1}^n w_i k_i'  \pmod p
+\sum_{i=1}^d w_i k_i = \sum_{i=1}^d w_i k_i'  \pmod p
 $$
 Let $j$ be some coordinate where $k_j ≠ k_j'$
 $$\begin{align}
@@ -266,55 +267,97 @@ w_j &= \delta (k_j - k_j')^{-1} &&\pmod p
 
 ### So funny story...
 
-Authors spend _a lot of time_ streamlining an implementation of DotMix
+Authors spend _a lot of time_ an an optimized version of DotMix
 
-- I thought that this optimized version was SplitMix—it's not
-- The paper just throws up its hands and does something else
+- I thought that this optimized version was SplitMix — it's not
+- Then the paper just throws up its hands and does something else
+
+In my defense, they spend the first _12 out of 20_ pages on DotMix
 
 ---
-# SplitMix
+# What SplitMix actually is
 
-What SplitMix actually is:
+$s$ is the main RNG state; $γ$ is a per-task constant
 ```julia
-adv(s::UInt64) = s += 0x9E3779B97F4A7C15
+advance(s::UInt64) = s += γ # <= very simple state transition
 
-function out(s::UInt64)
-    s ⊻= s >> 30
-    s *= 0xBF58476D1CE4E5B9
-    s ⊻= s >> 27
-    s *= 0x94D049BB133111EB
-    s ⊻= s >> 31
+function gen_value(s::UInt64)
+    s ⊻= s >> 33; s *= 0xff51afd7ed558ccd
+    s ⊻= s >> 33; s *= 0xc4ceb9fe1a85ec53
+    s ⊻= s >> 33
+end
+```
+State transition is very weak, relies entirely on output function
+
+---
+# SplitMix: splitting
+
+```julia
+s = advance(s); s′ = gen_value(s) # <= child state
+s = advance(s); γ′ = gen_gamma(s) # <= child gamma
+```
+
+```julia
+function gen_gamma(s::UInt64)
+    s ⊻= s >> 30; s *= 0xbf58476d1ce4e5b9
+    s ⊻= s >> 27; s *= 0x94d049bb133111eb
+    s ⊻= s >> 31; s |= 0x0000000000000001
+    s ⊻= ((s ⊻ (s >>> 1)) ≥ 24) * 0xaaaaaaaaaaaaaaaa
 end
 ```
 
 ---
-# SplitMix
+# SplitMix: splitting
 
-To generate values in a task:
-```julia
-state = adv(state)
-value = out(state)
-```
-To spawn a child task:
-```julia
-parent_state = adv(state)
-child_state  = out(state)
-```
+Almost what we're doing in Julia 1.7-1.9
+
+- Both sample parent to set child state
+- Only SplitMix is parameterized by per-task $γ$
+
+Issues:
+
+- Somewhat weak RNG: very weak state transition + strong finalizer
+- Forking modifies parent RNG — exactly what we're trying to avoid
 
 ---
-# SplitMix
+# Auxiliary RNG or not?
 
-This is amusing because:
+- DotMix is explicitly intended as an _auxiliary RNG_
+  - used to seed main RNG on task fork, not to generate samples
+- SplitMix can be used as main RNG _and_ to fork children
+  - but if you do that, then forking changes the parent RNG stream
 
-- It's literally what we're doing in Julia 1.7-1.9
-- Except we're using a different (better) RNG
+---
+# Auxiliary RNG or not?
 
-If we use this as our main RNG it fixes nothing
+We need to have auxiliary RNG state:
+- By requirement, forking children must not change main RNG state
+- But _something_ must change or every child task would be identical
 
-- The whole point is for forking tasks _not_ to advance main RNG
-- We _could_, however, use SplitMix as an auxiliary RNG (like DotMix)
+So we _need_ to have auxiliary RNG state outside of main RNG
+- Using SplitMix as an aux RNG adds 128 bits of aux state
 
 ---
 # Too Late
 
 By the time I realized all this, I'd already done something else...
+
+To understand that, need to see how Steele et al. tweaked DotMix
+
+---
+# DotMix optimized (SplitMix paper)
+
+The main optimization made to DotMix by Steele _et al._:
+
+- Task stores dot product of previously forked child
+- Starts with parent's own dot product
+- When forking next child, just add $w_d$ ($d$ is tree depth)
+- New dot product saved in both parent and child 
+
+---
+# DotMix optimized (SplitMix paper)
+
+They also:
+
+- Change prime modulus to $p = 2^{64} + 13$ with some cleverness
+- Use a cheaper non-linzer, bijective finalizer
