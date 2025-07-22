@@ -223,10 +223,11 @@ SplitMix (2014): *Fast Splittable Pseudorandom Number Generators*
 Concept: "pedigree" vector of a task
 - Root task has pedigree $\langle \rangle$
 - If parent has pedigree $\langle k_1, k_2, ..., k_{d-1} \rangle$
-- Then $k_d$th child has pedigree $\langle k_1, k_2, ..., k_{d-1}, k_d \rangle$
+- Its children are at depth $d$ in the task tree
+- The $k_d$th child has pedigree $\langle k_1, k_2, ..., k_{d-1}, k_d \rangle$
 
 Every prefix of a task's pedigree is the pedigree of an ancestor
-- $d$ is task's depth in task tree
+- Can zero-extend pedigree vectors to match lengths
 
 ---
 # DotMix
@@ -312,12 +313,11 @@ end
 Almost what we're doing in Julia 1.7-1.9
 
 - Both sample parent to set child state
-- Only SplitMix is parameterized by per-task $γ$
+- SplitMix is parameterized by per-task $γ$
 
-Issues:
-
-- Somewhat weak RNG: very weak state transition + strong finalizer
-- Forking modifies parent RNG — exactly what we're trying to avoid
+Cool idea:
+- Even if tasks have an RNG state collision
+- As long as $γ$ values are different, it's still fine
 
 ---
 # Auxiliary RNG or not?
@@ -331,23 +331,28 @@ Issues:
 # Auxiliary RNG or not?
 
 We need to have auxiliary RNG state:
-- By requirement, forking children must not change main RNG state
+- By _requirement_, forking children must not change main RNG state
 - But _something_ must change or every child task would be identical
 
 So we _need_ to have auxiliary RNG state outside of main RNG
-- Using SplitMix as an aux RNG adds 128 bits of aux state
 
 ---
-# Too Late
+# SplitMix as auxiliary RNG?
 
-By the time I realized all this, I'd already done something else...
+If we used SplitMix for this, it would add 128 bits of aux RNG state
 
-To understand that, need to see how Steele et al. tweaked DotMix
+- This is _per task object_, so we really want to keep it minimal
+- More than 64 bits of aux RNG state seems like too much
+
+We don't need SplitMix's ability to generate _and_ split
+
+- Should use all aux RNG bits for splitting, none for generation
+- DotMix does this — and it has collision resistance proof
 
 ---
-# DotMix optimized (SplitMix paper)
+# Optimized DotMix (SplitMix paper)
 
-The main optimization made to DotMix by Steele _et al._:
+Main optimization Steele _et al._ make to DotMix:
 
 - Task stores dot product of previously forked child
 - Starts with parent's own dot product
@@ -355,9 +360,13 @@ The main optimization made to DotMix by Steele _et al._:
 - New dot product saved in both parent and child 
 
 ---
-# DotMix optimized (SplitMix paper)
+# Optimized DotMix (SplitMix paper)
 
-They also:
+Other optimizations:
 
-- Change prime modulus to $p = 2^{64} + 13$ with some cleverness
-- Use a cheaper non-linzer, bijective finalizer
+- Use prime modulus of $p = 2^{64} + 13$ with some cleverness
+- Use cheaper non-linear, bijective finalizer
+
+---
+# Improving DotMix further
+
