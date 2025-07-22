@@ -370,3 +370,67 @@ Other optimizations:
 ---
 # Improving DotMix further
 
+Prime modulus arithmetic is slow and complicated
+
+- A lot of effort is put into optimizing it in both papers
+- Even better if we could just use native arithmetic
+
+---
+# Improving DotMix further
+
+Why do we need a prime modulus?
+
+- For the proof of collision resistance
+- So $k_j - k_j' ≠ 0$ is guaranteed to be invertible
+
+---
+# Binary pedigrees?
+
+Why are pedigree coordinates integers?
+
+- Because the task tree is $n$-ary
+
+But forking tasks is inherently binary...
+
+- Can we make pedigree coordinates binary instead?
+
+---
+# Assigning unique task IDs
+
+Root node:
+
+- $\mathrm{root_id} = 0$ &nbsp;&nbsp;&nbsp; (node ID — immutable)
+- $\mathrm{root_ix} = 0$ &nbsp;&nbsp;&nbsp; (fork index — mutable)
+
+Task fork (arbitrary precision integers):
+
+- $\mathrm{child_id} = 2^\mathrm{parent_ix} + \mathrm{parent_id}$
+- $\mathrm{child_ix} = \mathrm{parent_ix} += 1$
+
+---
+# Recovering pedigree
+
+We can easily turn task IDs into binary pedigree vectors:
+
+- Coordinates are binary digits of node ID
+
+How are these coordinates different?
+
+- Coordinates are all zeros and ones
+- Not all children of a parent have the same pedigree length
+- Easier to view pedigree vectors as having infinite dimensions
+
+---
+# Collision proof revisited
+
+$$\begin{align}
+\text{collision:} &&
+\sum_{i=1}^d w_i k_i = \sum_{i=1}^d w_i k_i' &\pmod n \\
+\text{difference:} &&
+w_j (k_j - k_j') = \delta &\pmod n \\
+\end{align}$$
+Here $k_j, k_j' \in \{0,1\}$ and $k_j ≠ k_j'$
+
+- Therefore $k_j - k_j' = ±1$ which is invertible in any modulus
+
+Voilà! We can use native arithmetic: $n = 2^{64}$
