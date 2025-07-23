@@ -259,8 +259,8 @@ $$
 $$
 Let $j$ be some coordinate where $k_j ≠ k_j'$
 $$\begin{align}
-w_j (k_j - k_j') &= \delta &&\pmod p \\
-w_j &= \delta (k_j - k_j')^{-1} &&\pmod p
+w_j (k_j - k_j') = \delta &\pmod p \\
+w_j = \delta (k_j - k_j')^{-1} &\pmod p
 \end{align}$$
 
 ---
@@ -367,6 +367,10 @@ Other optimizations:
 - Use prime modulus of $p = 2^{64} + 13$ with some cleverness
 - Use cheaper non-linear, bijective finalizer
 
+Their improved DotMix is a great start
+
+- We're going to see if we can improve it even more...
+
 ---
 # Improving DotMix further
 
@@ -423,14 +427,47 @@ How are these coordinates different?
 ---
 # Collision proof revisited
 
+With binary coordinates $k_j - k_j'$ is always $±1$
 $$\begin{align}
-\text{collision:} &&
-\sum_{i=1}^d w_i k_i = \sum_{i=1}^d w_i k_i' &\pmod n \\
-\text{difference:} &&
 w_j (k_j - k_j') = \delta &\pmod n \\
+w_j = (k_j - k_j')\delta = ±\delta &\pmod n
 \end{align}$$
-Here $k_j, k_j' \in \{0,1\}$ and $k_j ≠ k_j'$
 
-- Therefore $k_j - k_j' = ±1$ which is invertible in any modulus
+- So we can take $n = 2^{64}$ — machine arithmetic
+- No more prime modulus shenanigans!
 
-Voilà! We can use native arithmetic: $n = 2^{64}$
+---
+# Random Weights
+
+DotMix uses a pre-generated array of truly random weights
+
+- Static — shared between all tasks
+- 1024 random UInt64 values — that's 8KiB of data
+- If the task tree gets deeper than 1024, they recycle weights!
+
+This all seems a bit nuts. Can't we use an RNG to generate weights?
+
+---
+# Pseudorandom Weights
+
+We'll use a small auxiliary RNG to generate weights
+
+- 64 bits of aux RNG state
+- 64 bit weight value outputs
+
+---
+# Pseudorandom Weights
+
+PCG-RXS-M-XS-64 is arguably the best PRNG for this case
+
+```julia
+advance(s::UInt64) = 0xd1342543de82ef95*s + 1
+
+function output(s::UInt64)
+    s ⊻= s >> ((s >> 59) + 5)
+    s *= 0xaef17502108ef2d9
+    s ⊻= s >> 43
+end
+```
+
+- LCG core + strong non-linear bijective output function
