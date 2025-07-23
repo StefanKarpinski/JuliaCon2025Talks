@@ -529,7 +529,7 @@ end
 ```
 
 ---
-# Accumulating into the main RNG
+# Accumulating into main RNG
 
 Main RNG registers used to accumulate dot products — is this ok?
 
@@ -539,3 +539,67 @@ Main RNG registers used to accumulate dot products — is this ok?
 Collision resistance proof can be made to work
 - Ehen main RNG use is interleaved with task forking
 - Key facts: RNG advance is bijective, $\delta$ doesn't matter
+
+---
+# All Good, Right?
+
+Unfortunately not. In Feb 2024, [foobar_lv2 pointed out](https://discourse.julialang.org/t/linear-relationship-between-xoshiro-tasks/110454):
+- In Julia 1.10 there's an observable linear relationship between RNG outputs when four tasks are spawned in a certain way
+
+---
+# Linear Relationship
+
+On Julia 1.10 this function only produces _nine_ different values:
+```julia
+using .Threads
+
+macro fetch(ex) :(fetch(@spawn($(esc(ex))))) end
+
+function taskCorrelatedXoshiros()
+    r11, r10 = @fetch (@fetch(rand(UInt64)), rand(UInt64))
+    r01, r00 = (@fetch(rand(UInt64)), rand(UInt64))
+    (r01 + r10) - (r00 + r11)
+end
+```
+
+---
+# Linear Relationship: Why?
+
+Task diagram:
+$$
+\begin{array}{ccc}
+\text{task}_{00} & \overset{+w_1}{\longrightarrow} & \text{task}_{10} \\
+\big\downarrow\scriptstyle{+w_2} && \big\downarrow\scriptstyle{+w_2} \\
+\text{task}_{01} && \text{task}_{11}
+\end{array}
+$$
+
+---
+# Linear Relationship: Why?
+
+Relationships:
+$$\begin{align}
+\text{dot}_{10} &= \text{dot}_{00} + w_1 \\
+\text{dot}_{01} &= \text{dot}_{00} + w_2 \\
+\text{dot}_{11} &= \text{dot}_{10} + w_2 = \text{dot}_{00} + w_1 + w2
+\end{align}$$
+
+Therefore:
+$$\begin{align}
+\text{dot}_{01} + \text{dot}_{10}
+= 2\,\text{dot}_{00} + w_1 + w_2
+= \text{dot}_{00} + \text{dot}_{11}
+\end{align}$$
+
+---
+# Is DotMix broken?
+
+Core dot product computation in DotMix has this issue (inherently)
+
+- DotMix applies a non-linear bijective finalizer to the dot product
+
+The paper kind of glosses over this
+
+- Probably bc they are professionals and this is very obvious to them
+- I totally failed to realize how important this was
+- [Me, an idiot]: _The weights are random, that's good enough, right?_
