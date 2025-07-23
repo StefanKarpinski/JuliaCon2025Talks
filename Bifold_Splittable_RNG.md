@@ -437,12 +437,25 @@ w_j = (k_j - k_j')\delta = ±\delta &\pmod n
 - No more prime modulus shenanigans!
 
 ---
+# Simplified dot product
+
+This makes incremental dot product computation _very_ simple:
+
+```julia
+child_dot = parent_dot + weights[fork_index]
+```
+
+That's it:
+- Get the random weight for the "fork index"
+- Add it to the parent's dot product
+
+---
 # Random Weights
 
-DotMix uses a pre-generated array of truly random weights
+DotMix uses a pre-generated array of random weights
 
 - Static — shared between all tasks
-- 1024 random UInt64 values — that's 8KiB of data
+- 1024 random UInt64 values (8KiB of static data)
 - If the task tree gets deeper than 1024, they recycle weights!
 
 This all seems a bit nuts. Can't we use an RNG to generate weights?
@@ -458,7 +471,7 @@ We'll use a small auxiliary RNG to generate weights
 ---
 # Pseudorandom Weights
 
-PCG-RXS-M-XS-64 is arguably the best PRNG for this case
+PCG-RXS-M-XS-64 (PCG64) is arguably the best PRNG for this case
 
 ```julia
 advance(s::UInt64) = 0xd1342543de82ef95*s + 1
@@ -471,3 +484,58 @@ end
 ```
 
 - LCG core + strong non-linear bijective output function
+
+---
+# DotMix++
+
+Here's (roughly) what's done in Julia 1.10:
+
+```julia
+w = aux_rng # use previous state (better ILP)
+aux_rng = LCG_MULTIPLIER*aux_rng + 1 # advance LCG
+
+# LCG state => PCG output (weight)
+w ⊻= w >> ((w >> 59) + 5)
+w *= PCG_MULTIPLIER
+w ⊻= w >> 43
+
+main_rng += w # accumulate dot product into main RNG
+```
+
+---
+# Four Variants
+
+Our main RNG has _four_ 64-bit state registers, not just one...
+
+- We compute four different "independent" weights
+- Accumulate a different dot product into each register
+- Improves collision resistance from $1/2^{64}$ to $1/2^{256}$
+
+---
+# Four Variants
+
+```julia
+w = aux_rng
+aux_rng = LCG_MULTIPLIER*aux_rng + 1
+
+for register = 1:4
+    w += RANDOM_CONSTANT[register]
+    w ⊻= w >> ((w >> 59) + 5)
+    w *= PCG_MULTIPLIER[register]
+    w ⊻= w >> 43
+
+    main_rng[register] += w
+end
+```
+
+---
+# Accumulating into the main RNG
+
+Main RNG registers used to accumulate dot products — is this ok?
+
+- DotMix suggests "seeding" dot products with random initial values
+- We're effectively seeding with what main RNG state happens to be
+
+Collision resistance proof can be made to work
+- Ehen main RNG use is interleaved with task forking
+- Key facts: RNG advance is bijective, $\delta$ doesn't matter
