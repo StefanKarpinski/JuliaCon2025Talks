@@ -592,7 +592,7 @@ $$\begin{align}
 \end{align}$$
 
 ---
-# Is DotMix broken?
+# Is DotMix broken? (No)
 
 Core dot product computation in DotMix has this issue (inherently)
 
@@ -603,3 +603,127 @@ The paper kind of glosses over this
 - Probably bc they are professionals and this is very obvious to them
 - I totally failed to realize how important this was
 - [Me, an idiot]: _The weights are random, that's good enough, right?_
+
+---
+# How To Fix?
+
+DotMix applies a non-linear finalizer that destroys linear relationships
+
+- Can we do the same?
+
+Yes, but we'd have to accumulate dot product _outside_ of main RNG
+
+- Increases every task size by the size of the accumulator
+- For four independent perturbation values, adds 32 bytes
+
+---
+# Do We Need Dot Products?
+
+Dot products inherently produce these problematic linear relationships
+
+- Do we need a dot product? Could we use something non-linear?
+- What is absoutely necessary to make the collision proof work?
+
+---
+# Generalizing +
+
+In simplified version, the dot product is incrementally computed as:
+
+```julia
+child_dot = parent_dot + weights[fork_index]
+```
+
+Can replace + with any doubly bijective reducer, $β$:
+
+```julia
+child_fld = β(parent_fld, weights[fork_index])
+```
+
+- Left-fold by $β$ over the weights modulated by task ID bits
+
+---
+# Generalized proof
+
+Suppose two different tasks have the same reduction value
+
+- Can rewind through indices where task ID bits are equal
+  - because $s \mapsto β(s, w)$ is bijective
+
+- Can also rewind through matching usages of the main RNG
+  - because main RNG advance function is bijective
+
+---
+# Generalized proof
+
+Reduces to one of two possible situations:
+
+- Both tasks are forked from parents with different weights
+  - $β(s_1, w_1) = β(s_2, w_2)$ where $w_1 ≠ w_2$
+
+- One task is forked from its parent, other just used main RNG
+  - $β(s_1, w_1) = α(s_2)$ where $α$ is the main RNG transition
+
+---
+# Generalized proof
+
+Either way we have $β(s, w) = c$ for one of the tasks
+
+- Only one value of $w$ works
+  - because $w \mapsto β(s, w)$ is bijective
+
+Probability of $1/2^{64}$ for each register of the main RNG
+
+- Probability of $(1/2^{64})^4 = 1/2^{256}$ overall
+
+Collisions are practically impossible
+
+---
+# Finally: here's what we do
+
+```julia
+w = aux_rng
+aux_rng = LCG_MULTIPLIER*aux_rng + 1
+
+for register = 1:4
+    s = main_rng[register]
+    w ⊻= RANDOM_CONSTANT[register]
+    s += (2s + 1)*w # <= doubly bijective multiplication
+    s ⊻= s >> ((s >> 59) + 5)
+    s *= PCG_MULTIPLIER[register]
+    s ⊻= s >> 43
+    main_rng[register] = s
+end
+```
+
+---
+# Design Notes
+
+- Use LCG state directly as weight rather than PCG64
+  - Too weak for general RNG but ok for this use case
+- We xor the weight with a different constant per Xoshiro256 register
+- Combine register and weight using "doubly bijective multiply"
+  - $\mathrm{bimul}(s, w) = s + (2s + 1)w = (2s + 1)(2w + 1) ÷ 2 \pmod{2^{64}}$
+  - note: xor doesn't distribute over addition or multiplication
+- Finalize with per-register variant of PCG64 non-linear output
+- Accumulate into main RNG state — safe bc very non-linear
+
+---
+# Problem Summary
+
+We want task forking _not_ to affect the main RNG
+
+- We need to add _some_ auxiliary RNG state to each task
+- SplitMix would require two 64-bit words: state & gamma
+- DotMix would require two 64-bit words: state & accumulator
+
+---
+# Solution Summary
+
+We've modfied DotMix to the point of being almost unrecognizable
+
+- Only need one 64-bit word for auxiliary RNG (LCG)
+- Can safely accumulate into main RNG state
+- Provable $1/2^{256}$ collision resistance
+- Fast, simple task forking
+
+I've speculatively named this algorithm "Bifold"
