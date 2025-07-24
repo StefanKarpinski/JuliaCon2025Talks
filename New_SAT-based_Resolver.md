@@ -164,10 +164,11 @@ Variables:
 
 Properties:
 
-- Package of a version: $P(v)$
-- Versions of a package: $V(p)$
-- Dependencies of a version: $D(v)$
+- Package of a version: $p = P(v)$
+- Versions of a package: $v \in V(p)$
+- Dependencies of a version: $q \in D(v)$
 - Set of conflicts: $\{v, w\} \in C$
+- Conflicts of a version: $w \in C_v$
 
 ---
 # Clauses
@@ -258,8 +259,7 @@ Conflicts are exclusive
 
 ```julia
 for i = 1:n_p
-    for q in names
-        v_q = vars[q]
+    for q in names; v_q = vars[q]
         for j = 1:length(info[q].versions)
             info_p.conflicts[i, b+j] || continue
             PicoSAT.add(pico, -(v_p + i)) # ¬(p@i)
@@ -269,3 +269,49 @@ for i = 1:n_p
     end
 end
 ```
+
+---
+# Preprocessing
+
+SAT is sensitive to problem size
+
+- Pays off to generate as small a problem as you can
+
+Two strategies to reduce the size of problems:
+
+1. Only include "reachable" packages and versions
+2. Eliminate redundant versions that can't be picked
+
+---
+# Reachability
+
+Concept:
+
+- Start with best versions of all required packages
+- Only consider next version if better version has potential conflict
+- Also consider dependencies of any reachable versions
+
+---
+# Reachability
+
+Recursive definition
+
+| condition                               | implies             |
+|-----------------------------------------|:-------------------:|
+| $p$ in requirements                     | $p_1$ reachable     |
+| $p_i$ reachable and depends on $q$      | $q_1$ reachable     |
+| $p_i$ reachable with reachable conflict | $p_{i+1}$ reachable |
+| $p_i$ reachable and depends on $q$ and<br>$q_n$ reachable with reachable conflict | $p_{i+1}$ reachable |
+
+---
+# Redundancy
+
+Suppose $v$ and $w$ are versions of the same package
+
+- Preference: $v > w$ &nbsp;&nbsp; ($v$ is preferrable to $w$)
+- Dependencies: $D(v) \subseteq D(w)$
+- Conflicts: $C_v \subseteq C_w$
+
+There can never be a reason to choose $w$ over $v$
+
+- We can delete $w$
