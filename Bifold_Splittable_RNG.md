@@ -2,7 +2,7 @@
 marp: true
 math: mathjax
 theme: custom
-header: Bifold Splittable RNG
+header: Bifold
 paginate: true
 ---
 <!-- _class: lead -->
