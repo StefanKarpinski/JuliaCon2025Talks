@@ -101,13 +101,24 @@ The biggest issue with the existing resolver:
 ---
 # Newer ≠ Better? 
 
-When would you prefer older versions to newer ones?
+When would you prefer older versions over newer ones?
 
-- downgrade resolution — useful to test compat bounds
-- version fixing — prefer current version
-- minimizing downloads — prefer pre-installed versions
+- Version fixing — prefer current version
+  - minimize changes to manifests
+- Download avoidance — prefer pre-installed versions
+  - avoid installing new versions if possible
+- Downgrade resolution prefer oldest allowable versions
+  - useful for testing lower compat bounds
 
 We do all of these in hacky ways currently
 
-- Would be nice to support it properly
+---
+# Resolver.jl Approach
 
+- Avoid coupling with details of packages, versions, registries
+  - Resolver.jl doesn't know about any of these
+- Use an actual SAT solver (`libpicosat`)
+  - but how does optimization work?
+- SAT solvers are very sensitive to problem size
+  - significant preprocessing to minimize SAT problem size
+- Semi-internal SAT problem API is more broadly useful
