@@ -410,7 +410,7 @@ Main RNG registers used to accumulate dot products — is this ok?
 - We're effectively seeding with what main RNG state happens to be
 
 Collision resistance proof can be made to work
-- Ehen main RNG use is interleaved with task forking
+- Even if main RNG use is interleaved with task forking
 - Key facts: RNG advance is bijective, $\delta$ doesn't matter
 
 ---
@@ -487,10 +487,11 @@ DotMix applies a non-linear finalizer that destroys linear relationships
 Yes, but we'd have to accumulate dot product _outside_ of main RNG
 
 - Increases every task size by the size of the accumulator
-- For four independent perturbation values, adds 32 bytes
+- Even one accumulator adds 8 bytes (64 bits)
+- Four independent accumulators adds 32 bytes
 
 ---
-# Do We Need Dot Products?
+# Do "dot products" need to be linear?
 
 Dot products inherently produce these problematic linear relationships
 
@@ -500,40 +501,40 @@ Dot products inherently produce these problematic linear relationships
 ---
 # Generalizing +
 
-In simplified version, the dot product is incrementally computed as:
+In our simplified version, the dot product is incrementally computed:
 
 ```julia
 child_dot = parent_dot + weights[fork_index]
 ```
 
-Can replace + with any doubly bijective reducer, $β$:
+We can replace + with any doubly bijective reducer, $β$:
 
 ```julia
 child_fld = β(parent_fld, weights[fork_index])
 ```
 
-- Left-fold by $β$ over the weights modulated by task ID bits
+- Left-fold by $β$ over the weights, modulated by task ID bits
 
 ---
 # Generalized proof
 
-Suppose two different tasks have the same reduction value
+Collision resistance with interleaved main RNG usage
 
+- Suppose two different tasks have the same reduction value
 - Can rewind through indices where task ID bits are equal
   - because $s \mapsto β(s, w)$ is bijective
-
-- Can also rewind through matching usages of the main RNG
+- Can also rewind through matching usages of main RNG
   - because main RNG advance function is bijective
 
 ---
 # Generalized proof
 
-Reduces to one of two possible situations:
+Reduces to one of two possible situations...
 
-- Both tasks are forked from parents with different weights
+- Both tasks are forked from parents with different weights:
   - $β(s_1, w_1) = β(s_2, w_2)$ where $w_1 ≠ w_2$
 
-- One task is forked from its parent, other just used main RNG
+- One task is forked from its parent, other just used main RNG:
   - $β(s_1, w_1) = α(s_2)$ where $α$ is the main RNG transition
 
 ---
@@ -541,12 +542,12 @@ Reduces to one of two possible situations:
 
 Either way we have $β(s, w) = c$ for one of the tasks
 
-- Only one value of $w$ works
+- Only one value of $w$ hits this value of $c$
   - because $w \mapsto β(s, w)$ is bijective
 
 Probability of $1/2^{64}$ for each register of the main RNG
 
-- Probability of $(1/2^{64})^4 = 1/2^{256}$ overall
+- Probability of $(1/2^{64})^4 = 1/2^{256}$ over all four registers
 
 Collisions are practically impossible
 
@@ -573,30 +574,31 @@ end
 
 - Use LCG state directly as weight rather than PCG64
   - Too weak for general RNG but ok for this use case
-- We xor the weight with a different constant per Xoshiro256 register
+- Xor weight with different constant per Xoshiro256 register
 - Combine register and weight using "doubly bijective multiply"
   - $\mathrm{bimul}(s, w) = s + (2s + 1)w = (2s + 1)(2w + 1) ÷ 2 \pmod{2^{64}}$
-  - note: xor doesn't distribute over addition or multiplication
 - Finalize with per-register variant of PCG64 non-linear output
 - Accumulate into main RNG state — safe bc very non-linear
 
 ---
-# Problem Summary
+# Summary
 
 We want task forking _not_ to affect the main RNG
 
 - We need to add _some_ auxiliary RNG state to each task
-- SplitMix would require two 64-bit words: state & gamma
-- DotMix would require two 64-bit words: state & accumulator
+- SplitMix would require 2 × 64-bit words: state & gamma
+- DotMix would require 2 × 64-bit words: state & accumulator
+- Bifold only requires 1 × 64-bit word: LCG state for weights
 
 ---
-# Solution Summary
+# Summary
 
 We've modfied DotMix to the point of being almost unrecognizable
 
-- Only need one 64-bit word for auxiliary RNG (LCG)
+- "Dot product" is reduction with non-linear bijective reduction
 - Can safely accumulate into main RNG state
-- Provable $1/2^{256}$ collision resistance
+- Can safely interleave main RNG usage
+- Collision probability is $1/2^{256}$
 - Fast, simple task forking
 
-I've speculatively named this algorithm "Bifold"
+I've tentatively named this algorithm "Bifold"
