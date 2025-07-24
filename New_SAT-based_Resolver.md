@@ -117,8 +117,65 @@ We do all of these in hacky ways currently
 
 - Avoid coupling with details of packages, versions, registries
   - Resolver.jl doesn't know about any of these
-- Use an actual SAT solver (`libpicosat`)
-  - but how does optimization work?
+- Use an actual SAT solver (PicoSAT)
+  - how does optimization work? (you'll see)
 - SAT solvers are very sensitive to problem size
   - significant preprocessing to minimize SAT problem size
-- Semi-internal SAT problem API is more broadly useful
+
+#### Ends up being fast & scalable
+
+---
+# Emergent Features
+
+- Since it doesn't know about version numbers
+  - can give it arbitrary preference ordering
+- Generates optimal solutions in lexicographical order
+  - user can specify priority of packages
+- Semi-internal SAT problem API is more generally useful
+  - can be used for other related problems
+
+#### Also quite flexible
+
+---
+# SAT
+
+A SAT problem consists of:
+
+- A number of variables
+- A number of clauses — all must be satisfied
+- Each clause is a _disjunction_ of variables and negated variables
+
+Example: $(a \vee \lnot b \vee c) \wedge (\lnot a \vee b)$
+
+- Equivalent: $(b ⇒ (a \vee c)) \wedge (a ⇒ b)$
+
+---
+# Encoding Package Problems
+
+Variables:
+
+- One for each package: $p$
+  - use $p$ and $q$ for packages
+- One for each version: $v$
+  - use $v$ and $w$ for versions
+
+---
+# Some Notation
+
+Properties:
+
+- Package of a version: $P(v)$
+- Versions of a package: $V(p)$
+- Dependencies of a version: $D(v)$
+- Set of conflicts: $\{v, w\} \in C$
+
+---
+# Clauses
+
+| meaning                       | quantifiers             | clause                 |
+|-------------------------------|-------------------------|------------------------|
+| version implies its package   | $∀~ v$                  | $v ⇒ P(v)$             |
+| package implies some version  | $∀~ p$                  | $p ⇒ \bigvee V(p)$     |
+| only one version of a package | $∀~ p, \{v, w\} ⊆ V(p)$ | $\lnot v \vee \lnot w$ |
+| versions imply dependencies   | $∀~ v, q \in D(v)$      | $v ⇒ q$                |
+| conflicts are exclusive       | $∀~ \{v, w\} \in C$     | $\lnot v \vee \lnot w$ |
