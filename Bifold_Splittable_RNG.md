@@ -20,124 +20,20 @@ https://JuliaHub.com
 ---
 <!-- _class: default -->
 
-# Pop Quiz
+# RNG algorithm history
 
-What does this code print?
-
-```julia
-using Random
-Random.seed!(123)
-show(rand(UInt64))
-```
-
-Trick question! It depends on the version of Julia
-
-One thing we did right long ago was to adamantly insist that default RNG output is not stable across minor Julia versions
-
----
-# Historical Answers
-
-| versions       | output               | algorithm        | seeding |
-|:--------------:|:--------------------:|:----------------:|:-------:|
-| ≤ 1.5          | `0xbe6f0eacf58ebf12` | Mersenne Twister | naive   |
-| = 1.6          | `0xf5450eab0f9f1b7f` | Mersenne Twister | SHA256  |
-| ≥ 1.7          | `0x856e446e0c6a972a` | Xoshiro256++     | SHA256  |
-
-Note: we used dSFMT, a variant of classic Mersenne Twister
-
----
-# Why did we change RNGs?
-
-Mersenne Twister is not a great RNG by modern standards
-
-- Huge state: 2496 bytes
-- Period of $2^{19937} − 1$ is excessive
-- Fails many statistical tests:
-  - TestU01 BigCrush
-  - low bits have poor quality
-
----
-# Why Change RNGs?
-
-Xoshiro256++ is one of the best general purpose, modern RNGs
-
-- Small state: 32 bytes
-- Period of $2^{256} - 1$ is plenty
-- Passes statistical test suites
-  - low bits are slightly weak but better than MT
-
----
-# Even more significantly...
+| version       | algorithm        | seeding | location   | size       |
+|:-------------:|:----------------:|:-------:|:----------:|-----------:|
+| ≤ 1.5         | Mersenne Twister | naive   | global     | 2496 bytes |
+| = 1.6         | Mersenne Twister | SHA256  | global     | 2496 bytes |
+| ≥ 1.7         | Xoshiro256++     | SHA256  | task local |   32 bytes |
 
 Xoshiro256's compact size enables task-local RNG state
 
-- Before: shared global RNG state
-  - requires locks — boo, slooow
-  - RNG sequence depends on *global* sampling order
-- After: each task has its own RNG state
-  - no locks — yay! fast
-  - RNG sequence depends only on task tree shape
+- Reproducible multithreaded RNG sequences (seed & task tree shape)
 
 ---
-# Reproducability
-
-```julia
-function order_test(parent_sleep, child_sleep)
-    Random.seed!(0)
-    @sync begin
-        @async begin
-            sleep(child_sleep)
-            println("child:  $(repr(rand(UInt64)))")
-        end
-        sleep(parent_sleep)
-        println("parent: $(repr(rand(UInt64)))")
-    end
-end
-```
-
----
-# Julia 1.6
-
-Shared global RNG:
-
-```julia
-julia> order_test(0, 1)
-parent: 0xbfad144bf7250b28
-child:  0x21be0e591a3b69ea
-
-julia> order_test(1, 0)
-child:  0xbfad144bf7250b28
-parent: 0x21be0e591a3b69ea
-```
-
----
-# Julia 1.7
-
-Per-task RNG:
-
-```julia
-julia> order_test(0, 1)
-parent: 0xa95f73054eb51179
-child:  0x557173e70ae5a5ee
-
-julia> order_test(1, 0)
-child:  0x557173e70ae5a5ee
-parent: 0xa95f73054eb51179
-```
-
----
-# A Huge Improvement
-
-Many thanks to [Chet Hega](https://github.com/chethega) for the PR that originally implemented this!
-
-- Small state
-- Better RNG
-- Faster RNG + no locking = _much faster_
-- Reproducible
-  - deterministic based only on task tree shape
-
----
-# One Minor Annoyance
+# Works great, one annoyance...
 
 In Julia 1.7-1.9:
 
@@ -152,7 +48,7 @@ julia> begin
 ```
 
 ---
-# One Minor Annoyance
+# Works great, one annoyance...
 
 In Julia 1.7-1.9:
 
@@ -168,46 +64,18 @@ julia> begin
 ```
 
 ---
-# The Problem
-
-In Julia 1.7-1.9:
-
-- Merely spawning a child task changes the parent RNG
-- Doesn't matter if the child uses the RNG or not
-- We shouldn't care if code we call spawns a task or not
-  - see [*What Color is Your Function?*](https://journal.stuffwithstuff.com/2015/02/01/what-color-is-your-function/)
-  - that's about types, but it's the same principle
-
----
 # Why does this happen?
 
 When forking a task, child's RNG needs to be seeded
 - Can't just copy parent state
-- Parent & child would produce same values
+- Parent & child would produce same RNG values
 
 In 1.7-1.9 the child is seeded by sampling from the parent RNG
 - This modifies the parent RNG, changing its RNG sequence
   - uses RNG four times—once per word of Xoshiro256 state
 
 ---
-# These behave the same (1.7-1.9)
-
-```julia
-Random.seed!(0)
-println(repr(rand(UInt64)))
-@async nothing              # uses RNG 4 times
-println(repr(rand(UInt64)))
-```
-
-```julia
-Random.seed!(0)
-println(repr(rand(UInt64)))
-[rand(UInt64) for _ = 1:4]  # call RNG 4 times
-println(repr(rand(UInt64)))
-```
-
----
-# To The Literature!
+# To the literature!
 
 DotMix (2012): *Deterministic Parallel Random-Number Generation for Dynamic-Multithreading Platforms*
 - by Charles Leiserson, Tao Schardl, Jim Sukha
@@ -260,7 +128,7 @@ $$
 Let $j$ be some coordinate where $k_j ≠ k_j'$
 $$\begin{align}
 w_j (k_j - k_j') = \delta &\pmod p \\
-w_j = \delta (k_j - k_j')^{-1} &\pmod p
+w_j = (k_j - k_j')^{-1} \delta &\pmod p
 \end{align}$$
 
 ---
@@ -270,7 +138,7 @@ w_j = \delta (k_j - k_j')^{-1} &\pmod p
 
 Authors spend _a lot of time_ an an optimized version of DotMix
 
-- I thought that this optimized version was SplitMix — it's not
+- I thought that this optimized version was SplitMix (it's not)
 - Then the paper just throws up its hands and does something else
 
 In my defense, they spend the first _12 out of 20_ pages on DotMix
@@ -278,9 +146,8 @@ In my defense, they spend the first _12 out of 20_ pages on DotMix
 ---
 # What SplitMix actually is
 
-$s$ is the main RNG state; $γ$ is a per-task constant
 ```julia
-advance(s::UInt64) = s += γ # <= very simple state transition
+advance(s::UInt64) = s += γ # <= very simple RNG transition
 
 function gen_value(s::UInt64)
     s ⊻= s >> 33; s *= 0xff51afd7ed558ccd
@@ -288,7 +155,8 @@ function gen_value(s::UInt64)
     s ⊻= s >> 33
 end
 ```
-State transition is very weak, relies entirely on output function
+- $s$ is the main RNG state; $γ$ is a per-task constant
+- State transition is very weak, relies entirely on output function
 
 ---
 # SplitMix: splitting
@@ -310,13 +178,14 @@ end
 ---
 # SplitMix: splitting
 
-Almost what we're doing in Julia 1.7-1.9
+Similar to what we're doing in Julia 1.7-1.9
 
-- Both sample parent to set child state
-- SplitMix is parameterized by per-task $γ$
+- Sample parent's RNG to seed child state
 
 Cool idea:
-- Even if tasks have an RNG state collision
+
+- SplitMix is parameterized by per-task $γ$
+- Even if tasks have an RNG _state_ collision
 - As long as $γ$ values are different, it's still fine
 
 ---
@@ -367,34 +236,35 @@ Other optimizations:
 - Use prime modulus of $p = 2^{64} + 13$ with some cleverness
 - Use cheaper non-linear, bijective finalizer
 
-Their improved DotMix is a great start
+Their improved DotMix is a good start
 
-- We're going to see if we can improve it even more...
+- Can we improve it even more...
 
 ---
 # Improving DotMix further
 
 Prime modulus arithmetic is slow and complicated
 
-- A lot of effort is put into optimizing it in both papers
-- Even better if we could just use native arithmetic
+- Lots of effort is put into optimizing it in both papers
+
+Would be even better if we could just use native arithmetic
 
 ---
-# Improving DotMix further
+# Why do we need a prime modulus?
 
-Why do we need a prime modulus?
+For the proof of collision resistance:
 
-- For the proof of collision resistance
-- So $k_j - k_j' ≠ 0$ is guaranteed to be invertible
+- So that $k_j - k_j' ≠ 0$ is guaranteed to be invertible
+- Recall: $w = (k_j - k_j')^{-1} \delta \pmod p$
 
 ---
 # Binary pedigrees?
 
-Why are pedigree coordinates integers?
+Why are pedigree coordinates arbitrary integers?
 
 - Because the task tree is $n$-ary
 
-But forking tasks is inherently binary...
+Forking tasks is inherently binary — you don't fork multiple tasks
 
 - Can we make pedigree coordinates binary instead?
 
@@ -422,7 +292,6 @@ How are these coordinates different?
 
 - Coordinates are all zeros and ones
 - Not all children of a parent have the same pedigree length
-- Easier to view pedigree vectors as having infinite dimensions
 
 ---
 # Collision proof revisited
@@ -445,31 +314,35 @@ This makes incremental dot product computation _very_ simple:
 child_dot = parent_dot + weights[fork_index]
 ```
 
-That's it:
+That's all:
 - Get the random weight for the "fork index"
 - Add it to the parent's dot product
 
 ---
-# Random Weights
+# Random weights
 
 DotMix uses a pre-generated array of random weights
 
 - Static — shared between all tasks
-- 1024 random UInt64 values (8KiB of static data)
+- 1024 random 64-bit values (8KiB of static data)
 - If the task tree gets deeper than 1024, they recycle weights!
 
-This all seems a bit nuts. Can't we use an RNG to generate weights?
+This all seems a bit nuts
+
+- Can't we use a PRNG to generate weights?
 
 ---
-# Pseudorandom Weights
+# Pseudorandom weights
 
 We'll use a small auxiliary RNG to generate weights
 
-- 64 bits of aux RNG state
-- 64 bit weight value outputs
+- Auxiliary RNG: 64 bits of state
+- Output: 64 bits weights
+  - can't have duplicates
+  - beneficial in this case
 
 ---
-# Pseudorandom Weights
+# Pseudorandom weights
 
 PCG-RXS-M-XS-64 (PCG64) is arguably the best PRNG for this case
 
@@ -488,7 +361,7 @@ end
 ---
 # DotMix++
 
-Here's (roughly) what's done in Julia 1.10:
+What's done in Julia 1.10 (simplified):
 
 ```julia
 w = aux_rng # use previous state (better ILP)
