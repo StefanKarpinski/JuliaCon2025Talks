@@ -145,7 +145,7 @@ A SAT problem consists of:
 - A number of clauses — all must be satisfied
 - Each clause is a _disjunction_ of variables and negated variables
 
-Example: $(a \vee \lnot b \vee c) \wedge (\lnot a \vee b)$
+Example: $(a \vee ¬b \vee c) \wedge (¬a \vee b)$
 
 - Equivalent: $(b ⇒ (a \vee c)) \wedge (a ⇒ b)$
 
@@ -172,10 +172,100 @@ Properties:
 ---
 # Clauses
 
-| meaning                       | quantifiers             | clause                 |
-|-------------------------------|-------------------------|------------------------|
-| version implies its package   | $∀~ v$                  | $v ⇒ P(v)$             |
-| package implies some version  | $∀~ p$                  | $p ⇒ \bigvee V(p)$     |
-| only one version of a package | $∀~ p, \{v, w\} ⊆ V(p)$ | $\lnot v \vee \lnot w$ |
-| versions imply dependencies   | $∀~ v, q \in D(v)$      | $v ⇒ q$                |
-| conflicts are exclusive       | $∀~ \{v, w\} \in C$     | $\lnot v \vee \lnot w$ |
+| meaning                       | quantifiers             | clause             |
+|:-----------------------------:|:-----------------------:|:------------------:|
+| version implies its package   | $∀~ v$                  | $v ⇒ P(v)$         |
+| package implies some version  | $∀~ p$                  | $p ⇒ \bigvee V(p)$ |
+| only one version of a package | $∀~ p, \{v, w\} ⊆ V(p)$ | $¬v \vee ¬w$       |
+| versions imply dependencies   | $∀~ v, q \in D(v)$      | $v ⇒ q$            |
+| conflicts are exclusive       | $∀~ \{v, w\} \in C$     | $¬v \vee ¬w$       |
+
+---
+# Code
+
+Loop over packages
+
+```julia
+for p in names
+    info_p = info[p]
+    n_p = length(info_p.versions) # number of versions of p
+    v_p = vars[p]                 # lookup variable for p
+
+    # generate clauses for p
+end
+```
+
+---
+# Code
+
+Version implies its package
+
+```julia
+for i = 1:n_p
+    PicoSAT.add(pico, -(v_p + i)) # ¬(p@i)
+    PicoSAT.add(pico, v_p)        # p
+    PicoSAT.add(pico, 0)          # end clause
+end
+```
+
+---
+# Code
+
+Package implies some version
+
+```julia
+PicoSAT.add(pico, -v_p)        # ¬p
+for i = 1:n_p
+    PicoSAT.add(pico, v_p + i) # ¬(p@i)
+end
+PicoSAT.add(pico, 0)           # end clause
+```
+
+---
+# Code
+
+Only one version of a package
+
+```julia
+exclusive &&
+for i = 1:n_p-1, j = i+1:n_p
+    PicoSAT.add(pico, -(v_p + i)) # ¬(p@i)
+    PicoSAT.add(pico, -(v_p + j)) # ¬(p@j)
+    PicoSAT.add(pico, 0)          # end clause
+end
+```
+
+---
+# Code
+
+Versions imply dependencies
+
+```julia
+for i = 1:n_p
+    for (j, q) in enumerate(info_p.depends)
+        info_p.conflicts[i, j] || continue # deps & conflicts
+        PicoSAT.add(pico, -(v_p + i)) # ¬(p@i)
+        PicoSAT.add(pico, vars[q])    # q
+        PicoSAT.add(pico, 0)          # end clause
+    end
+end
+```
+
+---
+# Code
+
+Conflicts are exclusive
+
+```julia
+for i = 1:n_p
+    for q in names
+        v_q = vars[q]
+        for j = 1:length(info[q].versions)
+            info_p.conflicts[i, b+j] || continue
+            PicoSAT.add(pico, -(v_p + i)) # ¬(p@i)
+            PicoSAT.add(pico, -(v_q + j)) # ¬(p@j)
+            PicoSAT.add(pico, 0)          # end clause
+        end
+    end
+end
+```
