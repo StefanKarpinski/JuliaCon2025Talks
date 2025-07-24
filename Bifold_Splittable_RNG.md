@@ -28,7 +28,7 @@ https://JuliaHub.com
 | = 1.6         | Mersenne Twister | SHA256  | global     | 2496 bytes |
 | ≥ 1.7         | Xoshiro256++     | SHA256  | task local |   32 bytes |
 
-Xoshiro256's compact size enables task-local RNG state
+Xoshiro256’s compact size enables task-local RNG state
 
 - Reproducible multithreaded RNG sequences (seed & task tree shape)
 
@@ -66,8 +66,8 @@ julia> begin
 ---
 # Why does this happen?
 
-When forking a task, child's RNG needs to be seeded
-- Can't just copy parent state
+When forking a task, child’s RNG needs to be seeded
+- Can’t just copy parent state
 - Parent & child would produce same RNG values
 
 In 1.7-1.9 the child is seeded by sampling from the parent RNG
@@ -83,27 +83,27 @@ DotMix (2012): *Deterministic Parallel Random-Number Generation for Dynamic-Mult
 
 SplitMix (2014): *Fast Splittable Pseudorandom Number Generators*
 - by Guy Steele Jr, Doug Lea, Christine Flood
-- for Oracle's Java JDK8
+- for Oracle’s Java JDK8
 
 ---
 # DotMix
 
-Concept: "pedigree" vector of a task
+Concept: “pedigree” vector of a task
 - Root task has pedigree $\langle \rangle$
 - If parent has pedigree $\langle k_1, k_2, ..., k_{d-1} \rangle$
 - Its children are at depth $d$ in the task tree
 - The $k_d$th child has pedigree $\langle k_1, k_2, ..., k_{d-1}, k_d \rangle$
 
-Every prefix of a task's pedigree is the pedigree of an ancestor
+Every prefix of a task’s pedigree is the pedigree of an ancestor
 - Can zero-extend pedigree vectors to match lengths
 
 ---
 # DotMix
 
 Core idea:
-- Compute a dot product of a task's pedigree with random weights
+- Compute a dot product of a task’s pedigree with random weights
 - Can prove dot product collisions have probability near $1/2^{64}$
-- Apply bijective, non-linear "finalizer" based on MurmurHash
+- Apply bijective, non-linear “finalizer” based on MurmurHash
 - Finalized value is used to seed a main RNG (per-task)
 
 ---
@@ -138,7 +138,7 @@ w_j = (k_j - k_j')^{-1} \delta &\pmod p
 
 Authors spend _a lot of time_ an an optimized version of DotMix
 
-- I thought that this optimized version was SplitMix (it's not)
+- I thought that this optimized version was SplitMix (it’s not)
 - Then the paper just throws up its hands and does something else
 
 In my defense, they spend the first _12 out of 20_ pages on DotMix
@@ -161,14 +161,14 @@ end
 ---
 # SplitMix: splitting
 
-Similar to what we're doing in Julia 1.7-1.9
+Similar to what we’re doing in Julia 1.7-1.9
 
-- Sample parent's RNG to seed child state
+- Sample parent’s RNG to seed child state
 
 Cool idea: SplitMix is parameterized by per-task $γ$
 
 - As long as $γ$ values are different, $s$ collisions are fine
-- Child $γ$ derived from parent's $s$ value on task fork
+- Child $γ$ derived from parent’s $s$ value on task fork
   - this has to be done somewhat carefully
 
 ---
@@ -179,7 +179,7 @@ DotMix is explicitly intended as an _auxiliary RNG_
 
 SplitMix can be used as main RNG _and_ to fork children
 - But if you do that, then forking changes the parent RNG stream
-  - (what we're trying to avoid)
+  - (what we’re trying to avoid)
 
 ---
 # Auxiliary RNG or not?
@@ -195,7 +195,7 @@ If we used SplitMix for this, it would add 128 bits of aux RNG state
 
 - $s$ is 64 bits, $γ$ is 64 bits — 128 bits total
 
-We don't need SplitMix's ability to generate _and_ split
+We don’t need SplitMix’s ability to generate _and_ split
 
 - We should really use all aux RNG bits for splitting, not generation
   - DotMix does this — and it has collision resistance proof
@@ -279,9 +279,9 @@ This makes incremental dot product computation _very_ simple:
 child_dot = parent_dot + weights[fork_index]
 ```
 
-That's all:
-- Get the random weight for the "fork index"
-- Add it to the parent's dot product
+That’s all:
+- Get the random weight for the “fork index”
+- Add it to the parent’s dot product
 
 ---
 # Random weights
@@ -294,23 +294,23 @@ DotMix uses a pre-generated array of random weights
 
 This all seems a bit nuts
 
-- Can't we use a PRNG to generate weights?
+- Can’t we use a PRNG to generate weights?
 
 ---
 # Pseudorandom weights
 
-We'll use a small auxiliary RNG to generate weights
+We’ll use a small auxiliary RNG to generate weights
 
 - Auxiliary RNG: 64 bits of state
 - Output: 64 bits weights
-  - can't have duplicates
+  - can’t have duplicates
   - beneficial in this case
 
 PCG-RXS-M-XS-64 (PCG64) is arguably the best PRNG for this case
 - LCG core + strong non-linear bijective output function
 
 ---
-# Julia 1.10 — "DotMix++"
+# Julia 1.10 — “DotMix++”
 
 - Generate weights with PCG (adds 1 × 64-bit word)
 - Accumulate dot product into main RNG state (no extra words!)
@@ -329,7 +329,7 @@ main_rng += w # accumulate dot product into main RNG
 
 But our main RNG has _four_ 64-bit state registers, not just one...
 
-- We compute four different "independent" weights
+- We compute four different “independent” weights
 - Accumulate a different dot product into each register
 - Improves collision resistance from $1/2^{64}$ to $1/2^{256}$
 
@@ -359,18 +359,18 @@ end
 
 Main RNG registers used to accumulate dot products — is this ok?
 
-- DotMix suggests "seeding" dot products with random initial values
-- We're effectively seeding with what main RNG state happens to be
+- DotMix suggests “seeding” dot products with random initial values
+- We’re effectively seeding with what main RNG state happens to be
 
 Collision resistance proof can be made to work
 - Even when main RNG use is interleaved with task forking
-- Key facts: RNG advance is bijective, $\delta$ doesn't matter
+- Key facts: RNG advance is bijective, $\delta$ doesn’t matter
 
 ---
 # All Good?
 
 Unfortunately not. In Feb 2024, [foobar_lv2 pointed out](https://discourse.julialang.org/t/linear-relationship-between-xoshiro-tasks/110454):
-- In Julia 1.10 there's an observable linear relationship between RNG outputs when four tasks are spawned in a certain way
+- In Julia 1.10 there’s an observable linear relationship between RNG outputs when four tasks are spawned in a certain way
 
 ---
 # Linear Relationship
@@ -428,7 +428,7 @@ The paper kind of glosses over this
 
 - Probably bc they are professionals and this is very obvious to them
 - I totally failed to realize how important this was
-- [Me, an idiot]: _The weights are random, that's good enough, right?_
+- [Me, an idiot]: _The weights are random, that’s good enough, right?_
 
 ---
 # How To Fix?
@@ -437,14 +437,14 @@ DotMix applies a non-linear finalizer that destroys linear relationships
 
 - Can we do the same?
 
-Yes, but we'd have to accumulate dot product _outside_ of main RNG
+Yes, but we’d have to accumulate dot product _outside_ of main RNG
 
 - Increases every task size by the size of the accumulator
 - Even one accumulator adds 8 bytes (64 bits)
 - Four independent accumulators adds 32 bytes
 
 ---
-# Non-linear "dot products"?
+# Non-linear “dot products”?
 
 Dot products inherently produce these problematic linear relationships
 
@@ -505,7 +505,7 @@ Probability of $1/2^{64}$ for each register of the main RNG
 Result: collisions are practically impossible
 
 ---
-# "Bifold": task forking in Julia 1.11+
+# “Bifold”: task forking in Julia 1.11+
 
 ```julia
 w = aux_rng
@@ -528,7 +528,7 @@ end
 - Uses LCG state directly as weight rather than PCG64
   - Too weak for general RNG but fine for this use case
 - Xor common weight with different constant per Xoshiro256 register
-- Combine register and weight via "doubly bijective multiply"
+- Combine register and weight via “doubly bijective multiply”
   - $\mathrm{bimul}(s, w) = s + (2s + 1)w = (2s + 1)(2w + 1) ÷ 2 \pmod{2^{64}}$
 - Finalize with per-register variant of PCG64 non-linear output
 - Accumulate into main RNG state
@@ -553,7 +553,7 @@ Possible algorithms:
 Bifold = DotMix modified to being almost unrecognizable
 
 - Fork operation is fast and simple
-- "Dot product" = reduce by non-linear doubly bijective op
+- “Dot product” = reduce by non-linear doubly bijective op
 - Can safely accumulate into main RNG state
 - Can safely interleave main RNG usage
 - Collision probability is $1/2^{256}$ — effectively impossible
