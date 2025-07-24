@@ -33,7 +33,7 @@ Xoshiro256's compact size enables task-local RNG state
 - Reproducible multithreaded RNG sequences (seed & task tree shape)
 
 ---
-# Works great, one annoyance...
+# Works great, except...
 
 In Julia 1.7-1.9:
 
@@ -48,7 +48,7 @@ julia> begin
 ```
 
 ---
-# Works great, one annoyance...
+# Works great, except...
 
 In Julia 1.7-1.9:
 
@@ -75,7 +75,7 @@ In 1.7-1.9 the child is seeded by sampling from the parent RNG
   - uses RNG four times—once per word of Xoshiro256 state
 
 ---
-# To the literature!
+# Surely someone has worked on this...
 
 DotMix (2012): *Deterministic Parallel Random-Number Generation for Dynamic-Multithreading Platforms*
 - by Charles Leiserson, Tao Schardl, Jim Sukha
@@ -161,93 +161,67 @@ end
 ---
 # SplitMix: splitting
 
-```julia
-s = advance(s); s′ = gen_value(s) # <= child state
-s = advance(s); γ′ = gen_gamma(s) # <= child gamma
-```
-
-```julia
-function gen_gamma(s::UInt64)
-    s ⊻= s >> 30; s *= 0xbf58476d1ce4e5b9
-    s ⊻= s >> 27; s *= 0x94d049bb133111eb
-    s ⊻= s >> 31; s |= 0x0000000000000001
-    s ⊻= ((s ⊻ (s >>> 1)) ≥ 24) * 0xaaaaaaaaaaaaaaaa
-end
-```
-
----
-# SplitMix: splitting
-
 Similar to what we're doing in Julia 1.7-1.9
 
 - Sample parent's RNG to seed child state
 
-Cool idea:
+Cool idea: SplitMix is parameterized by per-task $γ$
 
-- SplitMix is parameterized by per-task $γ$
-- Even if tasks have an RNG _state_ collision
-- As long as $γ$ values are different, it's still fine
-
----
-# Auxiliary RNG or not?
-
-- DotMix is explicitly intended as an _auxiliary RNG_
-  - used to seed main RNG on task fork, not to generate samples
-- SplitMix can be used as main RNG _and_ to fork children
-  - but if you do that, then forking changes the parent RNG stream
+- As long as $γ$ values are different, $s$ collisions are fine
+- Child $γ$ derived from parent's $s$ value on task fork
+  - this has to be done somewhat carefully
 
 ---
 # Auxiliary RNG or not?
 
-We need to have auxiliary RNG state:
-- By _requirement_, forking children must not change main RNG state
+DotMix is explicitly intended as an _auxiliary RNG_
+- Used to seed main RNG on task fork, not to generate samples
+
+SplitMix can be used as main RNG _and_ to fork children
+- But if you do that, then forking changes the parent RNG stream
+  - (what we're trying to avoid)
+
+---
+# Auxiliary RNG or not?
+
+Why we _need_ to have auxiliary RNG state:
+- Requirement: forking children must not change main RNG state
 - But _something_ must change or every child task would be identical
-
-So we _need_ to have auxiliary RNG state outside of main RNG
 
 ---
 # SplitMix as auxiliary RNG?
 
 If we used SplitMix for this, it would add 128 bits of aux RNG state
 
-- This is _per task object_, so we really want to keep it minimal
-- More than 64 bits of aux RNG state seems like too much
+- $s$ is 64 bits, $γ$ is 64 bits — 128 bits total
 
 We don't need SplitMix's ability to generate _and_ split
 
-- Should use all aux RNG bits for splitting, none for generation
-- DotMix does this — and it has collision resistance proof
+- We should really use all aux RNG bits for splitting, not generation
+  - DotMix does this — and it has collision resistance proof
 
 ---
 # Optimized DotMix (SplitMix paper)
 
-Main optimization Steele _et al._ make to DotMix:
+Main optimization: incremental computation of dot product
 
-- Task stores dot product of previously forked child
-- Starts with parent's own dot product
-- When forking next child, just add $w_d$ ($d$ is tree depth)
-- New dot product saved in both parent and child 
+```julia
+cached_dot += weights[depth]
+child_dot = cached_dot
+```
 
----
-# Optimized DotMix (SplitMix paper)
-
-Other optimizations:
-
-- Use prime modulus of $p = 2^{64} + 13$ with some cleverness
-- Use cheaper non-linear, bijective finalizer
-
-Their improved DotMix is a good start
-
-- Can we improve it even more...
+Also improved:
+- Cheaper non-linear, bijective finalizer
+- Prime modulus of $p = 2^{64} + 13$ with some cleverness
 
 ---
-# Improving DotMix further
+# Improving DotMix further (new)
 
 Prime modulus arithmetic is slow and complicated
 
-- Lots of effort is put into optimizing it in both papers
-
-Would be even better if we could just use native arithmetic
+- _Soo much_ effort is put into this DotMix/SplitMix papers
+  - (lack of unsigned integers in JVM does not help)
+- Would be excellent if we could just use native arithmetic
 
 ---
 # Why do we need a prime modulus?
@@ -257,26 +231,20 @@ For the proof of collision resistance:
 - So that $k_j - k_j' ≠ 0$ is guaranteed to be invertible
 - Recall: $w = (k_j - k_j')^{-1} \delta \pmod p$
 
----
-# Binary pedigrees?
-
 Why are pedigree coordinates arbitrary integers?
 
-- Because the task tree is $n$-ary
-
-Forking tasks is inherently binary — you don't fork multiple tasks
-
-- Can we make pedigree coordinates binary instead?
+- Task tree is $n$-ary
+- But forking tasks is binary — could pedigree coordinates be binary?
 
 ---
-# Assigning unique task IDs
+# IDs instead of pedigrees
 
-Root node:
+Root ID:
 
 - $\mathrm{root_id} = 0$ &nbsp;&nbsp;&nbsp; (node ID — immutable)
 - $\mathrm{root_ix} = 0$ &nbsp;&nbsp;&nbsp; (fork index — mutable)
 
-Task fork (arbitrary precision integers):
+Child ID:
 
 - $\mathrm{child_id} = 2^\mathrm{parent_ix} + \mathrm{parent_id}$
 - $\mathrm{child_ix} = \mathrm{parent_ix} += 1$
@@ -284,14 +252,11 @@ Task fork (arbitrary precision integers):
 ---
 # Recovering pedigree
 
-We can easily turn task IDs into binary pedigree vectors:
+Can turn task IDs into binary pedigree vectors:
 
-- Coordinates are binary digits of node ID
+- $k_i$ is the $i$th bit of the task ID
 
-How are these coordinates different?
-
-- Coordinates are all zeros and ones
-- Not all children of a parent have the same pedigree length
+Very different tree shape
 
 ---
 # Collision proof revisited
@@ -302,7 +267,7 @@ w_j (k_j - k_j') = \delta &\pmod n \\
 w_j = (k_j - k_j')\delta = ±\delta &\pmod n
 \end{align}$$
 
-- So we can take $n = 2^{64}$ — machine arithmetic
+- Modulus can be anything — machine arithmetic works
 - No more prime modulus shenanigans!
 
 ---
@@ -341,51 +306,39 @@ We'll use a small auxiliary RNG to generate weights
   - can't have duplicates
   - beneficial in this case
 
----
-# Pseudorandom weights
-
 PCG-RXS-M-XS-64 (PCG64) is arguably the best PRNG for this case
-
-```julia
-advance(s::UInt64) = 0xd1342543de82ef95*s + 1
-
-function output(s::UInt64)
-    s ⊻= s >> ((s >> 59) + 5)
-    s *= 0xaef17502108ef2d9
-    s ⊻= s >> 43
-end
-```
-
 - LCG core + strong non-linear bijective output function
 
 ---
-# DotMix++
+# Julia 1.10 — "DotMix++"
 
-What's done in Julia 1.10 (simplified):
+- Generate weights with PCG (adds 1 × 64-bit word)
+- Accumulate dot product into main RNG state (no extra words!)
 
 ```julia
-w = aux_rng # use previous state (better ILP)
+w = aux_rng # weight from previous LCG state (better ILP)
 aux_rng = LCG_MULTIPLIER*aux_rng + 1 # advance LCG
-
-# LCG state => PCG output (weight)
 w ⊻= w >> ((w >> 59) + 5)
 w *= PCG_MULTIPLIER
 w ⊻= w >> 43
-
 main_rng += w # accumulate dot product into main RNG
 ```
 
 ---
-# Four Variants
+# Variations on a theme
 
-Our main RNG has _four_ 64-bit state registers, not just one...
+But our main RNG has _four_ 64-bit state registers, not just one...
 
 - We compute four different "independent" weights
 - Accumulate a different dot product into each register
 - Improves collision resistance from $1/2^{64}$ to $1/2^{256}$
 
+Win-win design:
+- Avoid extra task state for dot product accumulation
+- Massively increase collision resistance
+
 ---
-# Four Variants
+# Variations on a theme
 
 ```julia
 w = aux_rng
@@ -410,11 +363,11 @@ Main RNG registers used to accumulate dot products — is this ok?
 - We're effectively seeding with what main RNG state happens to be
 
 Collision resistance proof can be made to work
-- Even if main RNG use is interleaved with task forking
+- Even when main RNG use is interleaved with task forking
 - Key facts: RNG advance is bijective, $\delta$ doesn't matter
 
 ---
-# All Good, Right?
+# All Good?
 
 Unfortunately not. In Feb 2024, [foobar_lv2 pointed out](https://discourse.julialang.org/t/linear-relationship-between-xoshiro-tasks/110454):
 - In Julia 1.10 there's an observable linear relationship between RNG outputs when four tasks are spawned in a certain way
@@ -491,7 +444,7 @@ Yes, but we'd have to accumulate dot product _outside_ of main RNG
 - Four independent accumulators adds 32 bytes
 
 ---
-# Do "dot products" need to be linear?
+# Non-linear "dot products"?
 
 Dot products inherently produce these problematic linear relationships
 
@@ -513,14 +466,14 @@ We can replace + with any doubly bijective reducer, $β$:
 child_fld = β(parent_fld, weights[fork_index])
 ```
 
-- Left-fold by $β$ over the weights, modulated by task ID bits
+Accumulate = left-fold by $β$ over active weights (bits in task ID)
 
 ---
 # Generalized proof
 
-Collision resistance with interleaved main RNG usage
+_Can we prove collision resistance with interleaved main RNG usage?_
 
-- Suppose two different tasks have the same reduction value
+Suppose two different tasks have the same reduction value
 - Can rewind through indices where task ID bits are equal
   - because $s \mapsto β(s, w)$ is bijective
 - Can also rewind through matching usages of main RNG
@@ -542,17 +495,17 @@ Reduces to one of two possible situations...
 
 Either way we have $β(s, w) = c$ for one of the tasks
 
-- Only one value of $w$ hits this value of $c$
+- Only one value of $w$ hits this value of $c$ — unlikely to happen
   - because $w \mapsto β(s, w)$ is bijective
 
 Probability of $1/2^{64}$ for each register of the main RNG
 
 - Probability of $(1/2^{64})^4 = 1/2^{256}$ over all four registers
 
-Collisions are practically impossible
+Result: collisions are practically impossible
 
 ---
-# Finally: here's what we do
+# "Bifold": task forking in Julia 1.11+
 
 ```julia
 w = aux_rng
@@ -570,35 +523,37 @@ end
 ```
 
 ---
-# Design Notes
+# Bifold design notes
 
-- Use LCG state directly as weight rather than PCG64
-  - Too weak for general RNG but ok for this use case
-- Xor weight with different constant per Xoshiro256 register
-- Combine register and weight using "doubly bijective multiply"
+- Uses LCG state directly as weight rather than PCG64
+  - Too weak for general RNG but fine for this use case
+- Xor common weight with different constant per Xoshiro256 register
+- Combine register and weight via "doubly bijective multiply"
   - $\mathrm{bimul}(s, w) = s + (2s + 1)w = (2s + 1)(2w + 1) ÷ 2 \pmod{2^{64}}$
 - Finalize with per-register variant of PCG64 non-linear output
-- Accumulate into main RNG state — safe bc very non-linear
+- Accumulate into main RNG state
+  - unsafe for DotMix (linear), safe for Bifold (very non-linear)
 
 ---
 # Summary
 
-We want task forking _not_ to affect the main RNG
+We wanted task forking _not_ to affect the main RNG
 
-- We need to add _some_ auxiliary RNG state to each task
-- SplitMix would require 2 × 64-bit words: state & gamma
-- DotMix would require 2 × 64-bit words: state & accumulator
-- Bifold only requires 1 × 64-bit word: LCG state for weights
+- Need to add _some_ auxiliary RNG state to each task
+
+Possible algorithms:
+
+- SplitMix — 2 × 64-bit words: state + gamma
+- DotMix — 2 × 64-bit words: state + accumulator
+- Bifold — 1 × 64-bit word: state (LCG)
 
 ---
 # Summary
 
-We've modfied DotMix to the point of being almost unrecognizable
+Bifold = DotMix modified to being almost unrecognizable
 
-- "Dot product" is reduction with non-linear bijective reduction
+- Fork operation is fast and simple
+- "Dot product" = reduce by non-linear doubly bijective op
 - Can safely accumulate into main RNG state
 - Can safely interleave main RNG usage
-- Collision probability is $1/2^{256}$
-- Fast, simple task forking
-
-I've tentatively named this algorithm "Bifold"
+- Collision probability is $1/2^{256}$ — effectively impossible
