@@ -54,20 +54,20 @@ This problem is somewhat famously NP-complete
 - If you can solve this you can solve SAT problems
 - You might as well use a SAT solver (or something stronger)
 
-Otherwise you'll end up badly implementing a buggy, slow SAT solver
+Otherwise you’ll end up badly implementing a buggy, slow SAT solver
 
 ---
 # Not Just Any Solution
 
 Obviously just knowing if there is a solution is not that useful
 
-- That's just how computational complexity classes are defined
+- That’s just how computational complexity classes are defined
 
 
 ---
 # Optimal Solutions
 
-We also don't just want any solution — we want an optimal solution
+We also don’t just want any solution — we want an optimal solution
 
 - Requires a notion of some solutions
 
@@ -96,7 +96,7 @@ The biggest issue with the existing resolver:
 
 - Structure & meaning of version numbers deeply baked into logic
 - Bakes in that higher version numbers are better
-- Can't support pre-release or build numbers
+- Can’t support pre-release or build numbers
 
 ---
 # Newer ≠ Better? 
@@ -116,9 +116,9 @@ We do all of these in hacky ways currently
 # Resolver.jl Approach
 
 - Avoid coupling with details of packages, versions, registries
-  - Resolver.jl doesn't know about any of these
+  - Resolver.jl doesn’t know about any of these
 - Use an actual SAT solver (PicoSAT)
-  - how does optimization work? (you'll see)
+  - how does optimization work? (you’ll see)
 - SAT solvers are very sensitive to problem size
   - significant preprocessing to minimize SAT problem size
 
@@ -127,7 +127,7 @@ We do all of these in hacky ways currently
 ---
 # Emergent Features
 
-- Since it doesn't know about version numbers
+- Since it doesn’t know about version numbers
   - can give it arbitrary preference ordering
 - Generates optimal solutions in lexicographical order
   - user can specify priority of packages
@@ -279,8 +279,8 @@ SAT is sensitive to problem size
 
 Two strategies to reduce the size of problems:
 
-1. Only include "reachable" packages and versions
-2. Eliminate redundant versions that can't be picked
+1. Only include “reachable” packages and versions
+2. Eliminate redundant versions that can’t be picked
 
 ---
 # Reachability
@@ -360,7 +360,7 @@ There can be multiple Pareto-optimal solutions
 
 This is completely straightforward now:
 
-- The resolver doesn't care what order versions are ordered
+- The resolver doesn’t care what order versions are ordered
 - You just give it an ordering of versions for each package
   - Downgrade resolution — reverse normal version order
   - Download avoidance — sort pre-installed versions first
@@ -376,6 +376,6 @@ Solutions are optimized one package at a time
 - User can modify this order however they want
   - Move certain packages to the front
 
-Can't really prioritize indirect dependencies over direct ones
+Can’t really prioritize indirect dependencies over direct ones
 - This is actually an inherent feature of the problem
 - Subtle and took me a long time to understand
