@@ -141,6 +141,19 @@ Refer to $n$ as the length
 - nicer value: `length(-1e6:1e6) == 2e6 + 1`
 
 ---
+# Some key properties
+
+The _grid unit_:
+$$𝛾 = \gcd(𝛼, 𝛽, 𝜎) \in \mathbb{Q}^+$$
+Define _grid ratios_ as:
+$$\begin{align}
+a &= \frac{\alpha}{\gamma} \in \mathbb{Z} &
+b &= \frac{\beta}{\gamma}  \in \mathbb{Z} &
+s &= \frac{\sigma}{\gamma} \in \mathbb{Z}
+\end{align}$$
+Note $\gcd(a, b, s) = 1$.
+
+---
 # Picking interpretations
 
 There are infinite interpretations for any feasible range
@@ -149,3 +162,107 @@ There are infinite interpretations for any feasible range
 - This is the whole problem
 
 Needs to be practical to compute
+
+---
+# Simplest grid unit?
+
+Each interpretation corresponds to a grid unit, $\gamma$
+
+- Pick interpretation with simplest $\gamma$?
+  - minimize numerator and denominator size
+
+Two issues:
+
+- Hard to compute
+- Tends to violate invariants...
+
+---
+# Transformations
+
+Some transformations of range specifications:
+
+- Scaling: $(A, B, S) \mapsto (cA, cB, cS)$ for $c \in \mathbb{R}$
+- Translation: $(A, B, S) \mapsto (A + t, B + t, S)$ for $t \in \mathbb{R}$
+- Binary refinement: $(A, B, S) \mapsto (A, B, S/2)$
+
+---
+# Invariants
+
+Ideally, range selection should have these invariants:
+
+- Length: scaling & translation
+  - `length(c*a:c*s:c*b) = length(a+t:s:b+t) = length(a:s:b)`
+- Ratios: scaling & binary refinement
+  - `ratios(c*a:c*s:c*b) = ratios(a:s/2:b) = ratios(a:s:b)`
+- We also want this to hold:
+  - `length(a:s/2:b) = 2*length(a:s:b)`
+
+---
+# Invariants _vs_ simplest rationals
+
+It's well-known how to find the simplest rational in an interval
+
+- This is how the `rationalize` function works
+- Also how the current range interpretation works
+
+Does not commute with scaling or translation
+
+- `simplest(c*I) ≠ c*simplest(I)`
+- `simplest(I+t) ≠ simplest(I)+t`
+
+---
+# Invariants _vs_ simplest grid unit
+
+Finding simplest grid unit entails
+
+- Finding simplest common denominator in several intervals
+  - (least generator of numerical semigroup intersection)
+
+I actually have an algorithm for this
+
+- Very hard to compute efficiently
+- Violates invariants badly
+
+---
+# The Algorithm
+
+1. If $0 \in S$, range is infeasible
+2. If $S^+ < 0$ swap signs
+3. Compute $N$:
+$$\begin{align}
+N^- &= \left\lceil\frac{B^- - A^+}{S^+}\right\rceil &
+N^+ &= \left\lceil\frac{B^+ - A^-}{S^-}\right\rceil &
+\end{align}$$
+4. If $N$ is empty, range is infeasible
+
+---
+# The Algorithm
+
+5. Find $n \in N$ with maximal trailing zeros
+6. Let $p = z(n)$ and $(\bar{n}, \bar{A}, \bar{B}) = (n, A, B) ⋅\!/~ 2^p$
+7. Compute $\bar{Q}$:
+$$\begin{align}
+\bar{Q}^- &= \max\{\frac{\bar{A}^-}{S^+}, \frac{\bar{B}^-}{S^+} - \bar{n}\} \\
+\bar{Q}^+ &= \min\{\frac{\bar{A}^+}{S^-}, \frac{\bar{B}^+}{S^-} - \bar{n}\}
+\end{align}$$
+
+---
+# The Algorithm
+
+8. If $\lceil\bar{Q}^-\rceil ≤ \lfloor\bar{Q}^+\rfloor$
+ 	  - Find $\bar{a} \in \bar{Q}$ with the maximal trailing zeros; let $\bar{s} = 1$
+9. Otherwise
+    - Let $F = \bar{Q} - \lfloor \bar{Q}^- \rfloor \subseteq (0, 1)$
+	  - Find $\bar{a} / \bar{s} \in F$ the simplest fraction
+10. Let $\bar{b} = \bar{a} + \bar{n} \bar{s}$
+
+---
+# The Algorithm
+
+11. Compute $a / s = \bar{a} 2^p / \bar{s}$ and $b / s = \bar{b} 2^p / \bar{s}$ as reduced fractions:
+    - $a = \bar{a} \ll \max(0, p - z(\bar{s}))$
+    - $b = \bar{b} \ll \max(0, p - z(\bar{s}))$
+    - $s = \bar{s} \gg \max(0, z(\bar{s}) - p)$
+
+12. Let $G = (A / a) \cap (B / b) \cap (S / s)$
+13. Find $\gamma \in G$ the simplest fraction

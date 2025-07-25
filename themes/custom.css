@@ -119,3 +119,7 @@ pre {
   background: #eee;
   color: inherit;
 }
+
+ol {
+  margin-left: 1.5em;
+}
