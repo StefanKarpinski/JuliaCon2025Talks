@@ -379,3 +379,17 @@ Solutions are optimized one package at a time
 Can’t really prioritize indirect dependencies over direct ones
 - This is actually an inherent feature of the problem
 - Subtle and took me a long time to understand
+
+---
+# Improved Error Feedback?
+
+How to give better feedback when resolution is impossible?
+
+- This is an open question — if you have ideas, let me know!
+
+Possible idea:
+
+- Instead of trying to explain why it's impossible
+- Tell people how they could fix the situation
+  - Requirements they could remove
+  - Conflicts they could eliminate
