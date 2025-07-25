@@ -231,7 +231,7 @@ I actually have an algorithm for this
 3. Compute $N$:
 $$\begin{align}
 N^- &= \left\lceil\frac{B^- - A^+}{S^+}\right\rceil &
-N^+ &= \left\lceil\frac{B^+ - A^-}{S^-}\right\rceil &
+N^+ &= \left\lfloor\frac{B^+ - A^-}{S^-}\right\rfloor &
 \end{align}$$
 4. If $N$ is empty, range is infeasible
 
