@@ -70,19 +70,19 @@ When forking a task, child’s RNG needs to be seeded
 - Can’t just copy parent state
 - Parent & child would produce same RNG values
 
-In 1.7-1.9 the child is seeded by sampling from the parent RNG
+Child is seeded by sampling from the parent RNG (in 1.7-1.9)
 - This modifies the parent RNG, changing its RNG sequence
-  - uses RNG four times—once per word of Xoshiro256 state
+  - (uses RNG four times—once per word of Xoshiro256 state)
 
 ---
-# Surely someone has worked on this...
+## Surely someone has worked on this...
 
 DotMix (2012): *Deterministic Parallel Random-Number Generation for Dynamic-Multithreading Platforms*
-- by Charles Leiserson, Tao Schardl, Jim Sukha
+- Charles Leiserson, Tao Schardl, Jim Sukha
 - for MIT Cilk parallel runtime
 
 SplitMix (2014): *Fast Splittable Pseudorandom Number Generators*
-- by Guy Steele Jr, Doug Lea, Christine Flood
+- Guy Steele Jr, Doug Lea, Christine Flood
 - for Oracle’s Java JDK8
 
 ---
@@ -95,14 +95,13 @@ Concept: “pedigree” vector of a task
 - The $k_d$th child has pedigree $\langle k_1, k_2, ..., k_{d-1}, k_d \rangle$
 
 Every prefix of a task’s pedigree is the pedigree of an ancestor
-- Can zero-extend pedigree vectors to match lengths
 
 ---
 # DotMix
 
 Core idea:
 - Compute a dot product of a task’s pedigree with random weights
-- Can prove dot product collisions have probability near $1/2^{64}$
+- Can prove dot product collisions have probability $1/2^{64}$
 - Apply bijective, non-linear “finalizer” based on MurmurHash
 - Finalized value is used to seed a main RNG (per-task)
 
@@ -115,8 +114,8 @@ $$
 $$
 - $p$ is a prime modulus
   - necessary for proof of collision resistance
-- They use $p = 2^{64} - 59$
   - complicates the implementation a fair bit
+  - they use $p = 2^{64} - 59$
 
 ---
 # DotMix: proof
@@ -128,15 +127,15 @@ $$
 Let $j$ be some coordinate where $k_j ≠ k_j'$
 $$\begin{align}
 w_j (k_j - k_j') = \delta &\pmod p \\
-w_j = (k_j - k_j')^{-1} \delta &\pmod p
 \end{align}$$
+Unlikely: only one $w_j$ value satsifies this (needs primality)
 
 ---
 # SplitMix
 
 ### So funny story...
 
-Authors spend _a lot of time_ an an optimized version of DotMix
+Authors spend _a lot of time_ on an optimized version of DotMix
 
 - I thought that this optimized version was SplitMix (it’s not)
 - Then the paper just throws up its hands and does something else
@@ -155,8 +154,8 @@ function gen_value(s::UInt64)
     s ⊻= s >> 33
 end
 ```
-- $s$ is the main RNG state; $γ$ is a per-task constant
-- State transition is very weak, relies entirely on output function
+- Task state: $s$ is the main RNG state; $γ$ is a per-task constant
+- RNG core is very weak, relies entirely on output function
 
 ---
 # SplitMix: splitting
@@ -165,11 +164,11 @@ Similar to what we’re doing in Julia 1.7-1.9
 
 - Sample parent’s RNG to seed child state
 
-Cool idea: SplitMix is parameterized by per-task $γ$
+With a clever addition: SplitMix is parameterized by per-task $γ$
 
 - As long as $γ$ values are different, $s$ collisions are fine
 - Child $γ$ derived from parent’s $s$ value on task fork
-  - this has to be done somewhat carefully
+  - (this has to be done somewhat carefully)
 
 ---
 # Auxiliary RNG or not?
@@ -184,9 +183,11 @@ SplitMix can be used as main RNG _and_ to fork children
 ---
 # Auxiliary RNG or not?
 
-Why we _need_ to have auxiliary RNG state:
+“Proof” that we need auxiliary RNG state:
+
 - Requirement: forking children must not change main RNG state
 - But _something_ must change or every child task would be identical
+- That “something” is the auxiliary state. QED.
 
 ---
 # SplitMix as auxiliary RNG?
@@ -197,8 +198,11 @@ If we used SplitMix for this, it would add 128 bits of aux RNG state
 
 We don’t need SplitMix’s ability to generate _and_ split
 
-- We should really use all aux RNG bits for splitting, not generation
-  - DotMix does this — and it has collision resistance proof
+- We should use all auxiliary bits for splitting, not generation
+
+DotMix does this — and it has collision resistance proof
+
+- So, let’s try using DotMix...
 
 ---
 # Optimized DotMix (SplitMix paper)
@@ -215,13 +219,14 @@ Also improved:
 - Prime modulus of $p = 2^{64} + 13$ with some cleverness
 
 ---
-# Improving DotMix further (new)
+# Improving DotMix even further
 
 Prime modulus arithmetic is slow and complicated
 
-- _Soo much_ effort is put into this DotMix/SplitMix papers
+- _So much_ effort is put into this in the DotMix & SplitMix papers
   - (lack of unsigned integers in JVM does not help)
-- Would be excellent if we could just use native arithmetic
+
+Would be excellent if we could just use native arithmetic
 
 ---
 # Why do we need a prime modulus?
@@ -231,10 +236,16 @@ For the proof of collision resistance:
 - So that $k_j - k_j' ≠ 0$ is guaranteed to be invertible
 - Recall: $w = (k_j - k_j')^{-1} \delta \pmod p$
 
-Why are pedigree coordinates arbitrary integers?
+---
+# Why do we need a prime modulus?
 
-- Task tree is $n$-ary
-- But forking tasks is binary — could pedigree coordinates be binary?
+But why are pedigree coordinates arbitrary integers?
+
+- Because the task tree is $n$-ary
+
+But forking tasks is binary: one task splits into two
+
+- Can we assign pedigree with binary coordinates somehow?
 
 ---
 # IDs instead of pedigrees
@@ -267,20 +278,21 @@ w_j (k_j - k_j') = \delta &\pmod n \\
 w_j = (k_j - k_j')\delta = ±\delta &\pmod n
 \end{align}$$
 
-- Modulus can be anything — machine arithmetic works
+- Modulus can be anything including $n = 2^{64}$
 - No more prime modulus shenanigans!
+- Yay, machine arithmetic
 
 ---
 # Simplified dot product
 
-This makes incremental dot product computation _very_ simple:
+Incremental dot product computation becomes _very_ simple:
 
 ```julia
 child_dot = parent_dot + weights[fork_index]
 ```
 
 That’s all:
-- Get the random weight for the “fork index”
+- Get the random weight for the current “fork index”
 - Add it to the parent’s dot product
 
 ---
@@ -299,10 +311,10 @@ This all seems a bit nuts
 ---
 # Pseudorandom weights
 
-We’ll use a small auxiliary RNG to generate weights
+That’s what we’ll do:
 
-- Auxiliary RNG: 64 bits of state
-- Output: 64 bits weights
+- Use 64-bits of aux RNG state to generate weights
+- Output: same size as state
   - can’t have duplicates
   - beneficial in this case
 
@@ -310,7 +322,7 @@ PCG-RXS-M-XS-64 (PCG64) is arguably the best PRNG for this case
 - LCG core + strong non-linear bijective output function
 
 ---
-# Julia 1.10 — “DotMix++”
+# Julia 1.10: “DotMix++”
 
 - Generate weights with PCG (adds 1 × 64-bit word)
 - Accumulate dot product into main RNG state (no extra words!)
@@ -338,7 +350,7 @@ Win-win design:
 - Massively increase collision resistance
 
 ---
-# Variations on a theme
+# Four PCG variations
 
 ```julia
 w = aux_rng
@@ -364,7 +376,7 @@ Main RNG registers used to accumulate dot products — is this ok?
 
 Collision resistance proof can be made to work
 - Even when main RNG use is interleaved with task forking
-- Key facts: RNG advance is bijective, $\delta$ doesn’t matter
+  - (key facts: RNG advance is bijective, $\delta$ doesn’t matter)
 
 ---
 # All Good?
