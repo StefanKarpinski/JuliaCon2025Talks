@@ -107,7 +107,7 @@ When would you prefer older versions over newer ones?
   - minimize changes to manifests
 - Download avoidance — prefer pre-installed versions
   - avoid installing new versions if possible
-- Downgrade resolution prefer oldest allowable versions
+- Downgrade resolution — prefer oldest allowable versions
   - useful for testing lower compat bounds
 
 We do all of these in hacky ways currently
@@ -354,3 +354,28 @@ There can be multiple Pareto-optimal solutions
   - In other words, must be strictly better w.r.t. some package
 - Stop when no longer satisfiable
   - Or you have enough solutions
+
+---
+# Changing Version Preferences
+
+This is completely straightforward now:
+
+- The resolver doesn't care what order versions are ordered
+- You just give it an ordering of versions for each package
+  - Downgrade resolution — reverse normal version order
+  - Download avoidance — sort pre-installed versions first
+  - Version fixing — sort current version first
+- This can be done on a per-package basis
+  - _E.g._ Downgrade for some, normal for others
+
+---
+# Changing Package Priority
+
+Solutions are optimized one package at a time
+- Sorting by popularity might be a good default
+- User can modify this order however they want
+  - Move certain packages to the front
+
+Can't really prioritize indirect dependencies over direct ones
+- This is actually an inherent feature of the problem
+- Subtle and took me a long time to understand
