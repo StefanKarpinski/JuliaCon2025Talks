@@ -315,3 +315,42 @@ Suppose $v$ and $w$ are versions of the same package
 There can never be a reason to choose $w$ over $v$
 
 - We can delete $w$
+
+---
+# Constructing a SAT instance
+
+The process:
+
+- Parse registry data for explicitly required packages
+- Parse registry data for recursive dependencies of all versions
+- Reachability analysis to find candidate package versions
+- Redundancy analysis to eliminate unchoosable versions
+- Construct SAT problem for remaining package versions
+
+---
+# Finding Optimal Solutions
+
+SAT solvers can find some solution (or tell us there is none)
+
+- How do we find an optimal solution?
+
+---
+# Finding Optimal Solutions
+
+PicoSAT allows pushing and popping sets of clauses
+
+- Given a solution, add clause to improve some package version
+- When no longer improvable, last package version is optimal
+- Pop last clause, leaves optimial solution locked in
+- Repeat for each package
+
+---
+# Finding Multiple Solutions
+
+There can be multiple Pareto-optimal solutions
+
+- When an optimal solution is found
+- Add clause forcing future solutions not to be dominated by it
+  - In other words, must be strictly better w.r.t. some package
+- Stop when no longer satisfiable
+  - Or you have enough solutions
