@@ -385,11 +385,11 @@ Can’t really prioritize indirect dependencies over direct ones
 
 How to give better feedback when resolution is impossible?
 
-- This is an open question — if you have ideas, let me know!
+- Open problem — if you have ideas, let me know!
 
-Possible idea:
+Possible approach:
 
-- Instead of trying to explain why it's impossible
+- Don't try to explain why it's impossible
 - Tell people how they could fix the situation
   - Requirements they could remove
   - Conflicts they could eliminate

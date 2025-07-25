@@ -114,6 +114,8 @@ pre {
   border-radius: 6px;
 }
 
-code {
+:not(pre) > code {
   font-family: 'Monaco', monospace;
+  background: #eee;
+  color: inherit;
 }
