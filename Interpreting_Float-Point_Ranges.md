@@ -26,7 +26,7 @@ https://JuliaHub.com
 
 Consider `0.1:0.2:1.7`
 
-- Let's try generating the values naively
+- Let’s try generating the values naively
 
 ---
 # Naive generation?
@@ -65,7 +65,7 @@ $$
 $$
 - And round back to `Float64`
 
-We don't compute $\sin \frac{1}{10}$
+We don’t compute $\sin \frac{1}{10}$
 
 ---
 # Interpretation required
@@ -119,9 +119,9 @@ Guessing what `a:s:b` means (today):
 Otherwise fall back to literal (bad) interpretation
 
 ---
-# Let's formalize things
+# Let’s formalize things
 
-We'll view float inputs as intervals:
+We’ll view float inputs as intervals:
 
 - `a:s:b` $\rightarrow (A, S, B) \subseteq \mathbb{R}^3$
   - where $A   = [A^-, A^+] \subseteq \mathbb{R}$
