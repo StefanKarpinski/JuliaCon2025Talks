@@ -2,7 +2,7 @@
 marp: true
 math: mathjax
 theme: custom
-header: Resolver.jl
+header: Float Ranges
 paginate: true
 ---
 <!-- _class: lead -->
