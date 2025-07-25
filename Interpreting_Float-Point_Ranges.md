@@ -81,28 +81,71 @@ Each value has some wiggle room if interpreted as an interval
 ---
 # Another example
 
-Example: `-1e25:3e20:2e25`
-
 ```julia
-julia> r = -1e25:3e20:2e25
--1.0e25:3.0e20:1.9999999999999998e25
+julia> r = -3e25:1e25:4e25
+-3.0e25:1.0e25:3.000000000000001e25
 
-julia> r[33334]
--1.0000000000048549e20
-
-julia> r[33335]
-1.999999999988235e20
+julia> collect(r)
+7-element Vector{Float64}:
+ -3.0e25
+ -1.9999999999999998e25
+ -9.999999999999999e24
+  4.294967296e9         # <= should be zero
+  1.0000000000000003e25
+  2.0e25
+  3.000000000000001e25
 ```
 
 ---
 # Another example
 
-Example: `-1e25:3e20:2e25`
+Range: `-3e25:1e25:4e25`
 
-- `1e25` means $10000000000000000905969664 ± 2147483648$
-- `3e20` means $300000000000000000000 ± 65536$
-- `2e25` means $20000000000000001811939328 ± 4294967296$
+- `3e25` $= 30000000000000000570425344 ±2^{32}$
+- `1e25` $= 10000000000000000905969664 ±2^{31}$
+- `4e25` $= 40000000000000003623878656 ±2^{33}$
 
-Need to pick the "correct" value in each interval
+---
+# What we do now
 
-- In this case, obviously meant to be $m × 10^p$ for small $m$
+Guessing what `a:s:b` means (today):
+
+- Compute length `n = round((b-a)/s)`
+- Rationalize `a` to `n_a//d_a`
+- Rationalize `b` to `n_b//d_b`
+- Compute `n_s//d_s = (n_b//d_b - n_a//d_a)/n`
+- Check if `float(n_s//d_s) == s`
+
+Otherwise fall back to literal (bad) interpretation
+
+---
+# Let's formalize things
+
+We'll view float inputs as intervals:
+
+- `a:s:b` $\rightarrow (A, S, B) \subseteq \mathbb{R}^3$
+  - where $A   = [A^-, A^+] \subseteq \mathbb{R}$
+  - where $S\, = [S^-, S^+] \subseteq \mathbb{R}$
+  - where $B   = [B^-, B^+] \subseteq \mathbb{R}$
+
+---
+# Definitions
+
+An _rational interpretation_ of a range:
+$$(\alpha, \beta, \sigma) \in (A × B × S) \cap \mathbb{Q}^3$$
+$$\alpha + n\sigma = \beta ~~\text{for some}~~ n \in \mathbb{Z}$$
+
+Refer to $n$ as the length
+
+- even though ranges iterates $n+1$ values
+- nicer value: `length(-1e6:1e6) == 2e6 + 1`
+
+---
+# Picking interpretations
+
+There are infinite interpretations for any feasible range
+
+- How do we pick a good interpretation?
+- This is the whole problem
+
+Needs to be practical to compute
