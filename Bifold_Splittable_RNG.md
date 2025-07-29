@@ -547,17 +547,13 @@ end
   - unsafe for DotMix (linear), safe for Bifold (very non-linear)
 
 ---
-# Summary
+# Comparison
 
-We wanted task forking _not_ to affect the main RNG
-
-- Need to add _some_ auxiliary RNG state to each task
-
-Possible algorithms:
-
-- SplitMix — 2 × 64-bit words: state + gamma
-- DotMix — 2 × 64-bit words: state + accumulator
-- Bifold — 1 × 64-bit word: state (LCG)
+| algorithm | extra per-task state  | collision      | proof? |
+|:---------:|:---------------------:|:---------------|:------:|
+| DotMix    | 2 × 64-bit words      | $1/2^{64}$     | yes    |
+| SplitMix  | 2 × 64-bit words      | $1/2^{127}$ ?? | no     |
+| Bifold    | 1 × 64-bit word&nbsp; | $1/2^{256}$    | yes    |
 
 ---
 # Summary
